@@ -1,0 +1,5 @@
+tmp/
+*.bin
+.prepare
+.env
+.test_prepare

@@ -4,6 +4,21 @@ package models
 import "github.com/alwitt/goutils"
 
 // ======================================================================================
+// IPC Message Queue Error
+
+// IPCMessageQueueError encountered error operating the IPC message queue
+type IPCMessageQueueError struct{ goutils.BaseError }
+
+// NewIPCMessageQueueError build a IPCMessageQueueError, optionally capturing the call stack.
+func NewIPCMessageQueueError(message string, core error, getCallStack bool) IPCMessageQueueError {
+	base := goutils.BaseError{Name: "IPCMessageQueueError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return IPCMessageQueueError{BaseError: base}
+}
+
+// ======================================================================================
 // Persistence Layer Errors - SQL
 
 // PersistenceError encountered when operating the persistence layer (e.g. SQL statement failed)
