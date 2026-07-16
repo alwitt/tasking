@@ -46,3 +46,103 @@ func NewSQLError(message string, core error, getCallStack bool) SQLError {
 	}
 	return SQLError{BaseError: base}
 }
+
+// ======================================================================================
+// Task Engine Errors
+
+// TaskPreprocessError error encountered during task pre-processing
+type TaskPreprocessError struct{ goutils.BaseError }
+
+// NewTaskPreprocessError builds a TaskPreprocessError, optionally capturing the call stack.
+func NewTaskPreprocessError(message string, core error, getCallStack bool) TaskPreprocessError {
+	base := goutils.BaseError{Name: "TaskPreprocessError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskPreprocessError{BaseError: base}
+}
+
+// TaskExecutionError error encountered during task processing
+type TaskExecutionError struct{ goutils.BaseError }
+
+// NewTaskExecutionError builds a TaskExecutionError, optionally capturing the call stack.
+func NewTaskExecutionError(message string, core error, getCallStack bool) TaskExecutionError {
+	base := goutils.BaseError{Name: "TaskExecutionError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskExecutionError{BaseError: base}
+}
+
+// TaskExecutorError error operating the task executor component machinery
+// (worker-pool setup, execution instance submission, and shutdown), as opposed
+// to errors encountered while processing an individual task execution instance.
+type TaskExecutorError struct{ goutils.BaseError }
+
+// NewTaskExecutorError builds a TaskExecutorError, optionally capturing the call stack.
+func NewTaskExecutorError(message string, core error, getCallStack bool) TaskExecutorError {
+	base := goutils.BaseError{Name: "TaskExecutorError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskExecutorError{BaseError: base}
+}
+
+// TaskReceiverError error operating the task receiver component machinery
+// (queue receiver/executor/sender setup, crash-recovery orchestration, IPC
+// message dequeue, claim-ownership, and submission to the executor), as opposed
+// to errors encountered while processing an individual task execution instance.
+type TaskReceiverError struct{ goutils.BaseError }
+
+// NewTaskReceiverError builds a TaskReceiverError, optionally capturing the call stack.
+func NewTaskReceiverError(message string, core error, getCallStack bool) TaskReceiverError {
+	base := goutils.BaseError{Name: "TaskReceiverError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskReceiverError{BaseError: base}
+}
+
+// TaskSchedulerError error operating the task scheduler component: both the
+// machinery (request-processor and maintenance-timer setup, handler registration,
+// queue receiver/sender setup, worker/timer startup) and the per-task scheduling
+// logic (processing pending/cancelled/timed-out tasks and execution-instance state
+// transitions). Wraps the underlying cause (e.g. PersistenceError,
+// ConsistencyError, TaskQueueError) as Core.
+type TaskSchedulerError struct{ goutils.BaseError }
+
+// NewTaskSchedulerError builds a TaskSchedulerError, optionally capturing the call stack.
+func NewTaskSchedulerError(message string, core error, getCallStack bool) TaskSchedulerError {
+	base := goutils.BaseError{Name: "TaskSchedulerError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskSchedulerError{BaseError: base}
+}
+
+// TaskClientError error operating the task client: the public task-submission API
+// the rest of the system uses to enqueue work with the scheduler. Distinct from
+// the task engine's internal component errors. Wraps the underlying cause (e.g.
+// PersistenceError, TaskQueueError) as Core.
+type TaskClientError struct{ goutils.BaseError }
+
+// NewTaskClientError builds a TaskClientError, optionally capturing the call stack.
+func NewTaskClientError(message string, core error, getCallStack bool) TaskClientError {
+	base := goutils.BaseError{Name: "TaskClientError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskClientError{BaseError: base}
+}
+
+// TaskPostprocessError error encountered during task post-processing
+type TaskPostprocessError struct{ goutils.BaseError }
+
+// NewTaskPostprocessError builds a TaskPostprocessError, optionally capturing the call stack.
+func NewTaskPostprocessError(message string, core error, getCallStack bool) TaskPostprocessError {
+	base := goutils.BaseError{Name: "TaskPostprocessError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskPostprocessError{BaseError: base}
+}
