@@ -23,10 +23,10 @@ type ExecutionCompleteCallback func(
 // ExecutorSupport task executor support data
 type ExecutorSupport struct {
 	// Persistence persistence client
-	Persistence db.Client
+	Persistence db.Client `validate:"required"`
 
 	// OnCompleteCB completion callback
-	OnCompleteCB ExecutionCompleteCallback
+	OnCompleteCB ExecutionCompleteCallback `validate:"required"`
 }
 
 // Executor process task execution instances
@@ -45,11 +45,8 @@ type Executor interface {
 
 			@param ctx context.Context - execution context
 			@param instanceID string - execution instance ID
-			@param deadline *time.Time - optional deadline for execution completion
 	*/
-	ProcessExecutionInstance(
-		ctx context.Context, instanceID string, deadline *time.Time,
-	) error
+	ProcessExecutionInstance(ctx context.Context, instanceID string) error
 
 	/*
 		Stop the queue executor
@@ -59,8 +56,8 @@ type Executor interface {
 	Stop(ctx context.Context) error
 }
 
-// ExecutorImpl implements Executor
-type ExecutorImpl struct {
+// executorImpl implements Executor
+type executorImpl struct {
 	goutils.Component
 	validator *validator.Validate
 	queue     string
@@ -95,14 +92,19 @@ func NewExecutor(
 ) (Executor, error) {
 	logTags := log.Fields{"module": "task", "component": "task-executor", "queue": taskQueue}
 
-	instance := &ExecutorImpl{
+	validate := validator.New()
+	if err := validate.Struct(&support); err != nil {
+		return nil, goutils.NewBadInputError("execution support package is invalid", err, true)
+	}
+
+	instance := &executorImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
 			LogTagModifiers: []goutils.LogMetadataModifier{
 				goutils.ModifyLogMetadataByRestRequestParam,
 			},
 		},
-		validator:           validator.New(),
+		validator:           validate,
 		queue:               taskQueue,
 		support:             support,
 		wg:                  &sync.WaitGroup{},
@@ -147,7 +149,7 @@ func NewExecutor(
 		func(taskParam interface{}) error {
 			request, ok := taskParam.(executorWorkReq)
 			if ok {
-				return instance.processExecutionInstance(request.InstanceID, request.Deadline)
+				return instance.processExecutionInstance(request.InstanceID)
 			}
 			return goutils.NewConsistencyError(fmt.Sprintf(
 				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
@@ -178,7 +180,7 @@ Stop the queue executor
 
 	@param ctx context.Context - execution context
 */
-func (e *ExecutorImpl) Stop(ctx context.Context) error {
+func (e *executorImpl) Stop(ctx context.Context) error {
 	if err := e.workers.StopEventLoop(); err != nil {
 		return models.NewTaskExecutorError(
 			fmt.Sprintf("failed to stop queue %s executor worker pool", e.queue), err, true,
@@ -200,7 +202,7 @@ RegisterTaskProcessor register a processor for a task-name
 	@param processor models.TaskExecutionProcessor - the processor
 	@returns error if the task name already has a processor, or the processor is nil
 */
-func (e *ExecutorImpl) RegisterTaskProcessor(
+func (e *executorImpl) RegisterTaskProcessor(
 	taskName string, processor models.TaskExecutionProcessor,
 ) error {
 	if processor == nil {
@@ -220,7 +222,7 @@ func (e *ExecutorImpl) RegisterTaskProcessor(
 }
 
 // notifyOnComplete invoke the completion callback if one was provided
-func (e *ExecutorImpl) notifyOnComplete(
+func (e *executorImpl) notifyOnComplete(
 	ctx context.Context, instanceID string, err error, timestamp time.Time,
 ) {
 	if e.support.OnCompleteCB != nil {
@@ -231,7 +233,6 @@ func (e *ExecutorImpl) notifyOnComplete(
 // executorWorkReq [worker request] new task execution instance to process
 type executorWorkReq struct {
 	InstanceID string
-	Deadline   *time.Time
 }
 
 /*
@@ -239,13 +240,12 @@ ProcessExecutionInstance submit a new task execution instance for processing
 
 	@param ctx context.Context - execution context
 	@param instanceID string - execution instance ID
-	@param deadline *time.Time - optional deadline for execution completion
 */
-func (e *ExecutorImpl) ProcessExecutionInstance(
-	ctx context.Context, instanceID string, deadline *time.Time,
+func (e *executorImpl) ProcessExecutionInstance(
+	ctx context.Context, instanceID string,
 ) error {
 	if err := e.workers.Submit(ctx, executorWorkReq{
-		InstanceID: instanceID, Deadline: deadline,
+		InstanceID: instanceID,
 	}); err != nil {
 		return models.NewTaskExecutorError(
 			"failed to submit task execution instance ID for processing", err, true,
@@ -255,25 +255,16 @@ func (e *ExecutorImpl) ProcessExecutionInstance(
 }
 
 // processExecutionInstance process a task execution instance
-func (e *ExecutorImpl) processExecutionInstance(
-	instanceID string, deadline *time.Time,
+func (e *executorImpl) processExecutionInstance(
+	instanceID string,
 ) error {
 	// ------------------------------------------------------------------------------------
 	// Pre-processing
 
-	var theCtx context.Context
-	var theCtxCancel context.CancelFunc
-	if deadline != nil {
-		theCtx, theCtxCancel = context.WithDeadline(e.workerCtx, *deadline)
-	} else {
-		theCtx, theCtxCancel = context.WithCancel(e.workerCtx)
-	}
-	defer theCtxCancel()
-
 	var taskExecutionEntry models.TaskExecution
 	var taskEntry models.Task
 	if dbErr := e.support.Persistence.UseDatabaseInTransaction(
-		theCtx,
+		e.workerCtx,
 		func(dbCtx context.Context, dbClient db.Database) error {
 			var err error
 
@@ -369,6 +360,16 @@ func (e *ExecutorImpl) processExecutionInstance(
 
 	// ------------------------------------------------------------------------------------
 	// Process the task
+
+	// Derive the execution context, honoring the execution instance's deadline if set
+	var theCtx context.Context
+	var theCtxCancel context.CancelFunc
+	if taskExecutionEntry.Deadline != nil {
+		theCtx, theCtxCancel = context.WithDeadline(e.workerCtx, *taskExecutionEntry.Deadline)
+	} else {
+		theCtx, theCtxCancel = context.WithCancel(e.workerCtx)
+	}
+	defer theCtxCancel()
 
 	var taskErr error
 

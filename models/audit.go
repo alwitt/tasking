@@ -47,7 +47,7 @@ type SystemEventAudit struct {
 	// ID audit entry ID
 	ID string `json:"id" gorm:"column:id;primaryKey;unique" validate:"required"`
 	// EventType system event type
-	EventType SystemEventTypeENUM `json:"type" gorm:"column:type;not null" validate:"required,system_event"`
+	EventType SystemEventTypeENUM `json:"type" gorm:"column:type;not null" validate:"required,system_event_type"`
 	// Metadata a metadata relating to the event
 	Metadata datatypes.JSON `json:"metadata,omitempty" gorm:"column:metadata;default:null"`
 	// CreatedAt entry creation timestamp

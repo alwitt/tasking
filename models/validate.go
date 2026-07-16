@@ -14,7 +14,7 @@ RegisterWithValidator register with the validator this custom validation support
 */
 func RegisterWithValidator(v *validator.Validate) error {
 	if err := goutils.RegisterENUMInValidator(
-		v, "system_event", goutils.ValidateStringENUM[SystemEventTypeENUM](),
+		v, "system_event_type", goutils.ValidateStringENUM[SystemEventTypeENUM](),
 	); err != nil {
 		return err
 	}
@@ -39,6 +39,12 @@ func RegisterWithValidator(v *validator.Validate) error {
 
 	if err := goutils.RegisterENUMInValidator(
 		v, "task_execute_state", goutils.ValidateStringENUM[TaskExecutionStateENUM](),
+	); err != nil {
+		return err
+	}
+
+	if err := goutils.RegisterENUMInValidator(
+		v, "ipc_msg_type", goutils.ValidateStringENUM[IPCMessageTypeEnum](),
 	); err != nil {
 		return err
 	}

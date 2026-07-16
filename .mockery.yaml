@@ -11,10 +11,16 @@ require-template-schema-exists: true
 template: testify
 template-schema: '{{.Template}}.schema.json'
 packages:
+  github.com/alwitt/tasking/common:
+    config:
+      all: true
   github.com/alwitt/tasking/db:
     config:
       all: true
   github.com/alwitt/tasking/models:
+    config:
+      all: true
+  github.com/alwitt/tasking/task:
     config:
       all: true
   github.com/alwitt/tasking/test:

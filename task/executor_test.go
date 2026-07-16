@@ -235,7 +235,7 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 			assert.Nil(err)
 			defer func() { assert.Nil(executor.Stop(utCtx)) }()
 
-			assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID, nil))
+			assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
 			gotErr := waitForOnComplete(t, complete)
 			assert.NotNil(gotErr)
@@ -310,7 +310,7 @@ func TestExecutorExecutionFailure(t *testing.T) {
 
 	assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
-	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID, nil))
+	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
 	gotErr := waitForOnComplete(t, complete)
 	assert.NotNil(gotErr)
@@ -422,7 +422,7 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 
 			assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
-			assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID, nil))
+			assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
 			gotErr := waitForOnComplete(t, complete)
 			assert.NotNil(gotErr)
@@ -502,7 +502,7 @@ func TestExecutorHappyPath(t *testing.T) {
 
 	assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
-	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID, nil))
+	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
 	// The callback fires with no error.
 	gotErr := waitForOnComplete(t, complete)

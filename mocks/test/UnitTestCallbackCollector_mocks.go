@@ -8,6 +8,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/alwitt/goutils/redis"
+	"github.com/alwitt/tasking/common"
+	"github.com/alwitt/tasking/task"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -36,6 +39,252 @@ type UnitTestCallbackCollector_Expecter struct {
 
 func (_m *UnitTestCallbackCollector) EXPECT() *UnitTestCallbackCollector_Expecter {
 	return &UnitTestCallbackCollector_Expecter{mock: &_m.Mock}
+}
+
+// NewRedisIPCMsgReceiver provides a mock function for the type UnitTestCallbackCollector
+func (_mock *UnitTestCallbackCollector) NewRedisIPCMsgReceiver(ctx context.Context, queueName string, redis1 redis.Client, reader string) (common.IPCMessageReceive, error) {
+	ret := _mock.Called(ctx, queueName, redis1, reader)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NewRedisIPCMsgReceiver")
+	}
+
+	var r0 common.IPCMessageReceive
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, redis.Client, string) (common.IPCMessageReceive, error)); ok {
+		return returnFunc(ctx, queueName, redis1, reader)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, redis.Client, string) common.IPCMessageReceive); ok {
+		r0 = returnFunc(ctx, queueName, redis1, reader)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(common.IPCMessageReceive)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, redis.Client, string) error); ok {
+		r1 = returnFunc(ctx, queueName, redis1, reader)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewRedisIPCMsgReceiver'
+type UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call struct {
+	*mock.Call
+}
+
+// NewRedisIPCMsgReceiver is a helper method to define mock.On call
+//   - ctx context.Context
+//   - queueName string
+//   - redis1 redis.Client
+//   - reader string
+func (_e *UnitTestCallbackCollector_Expecter) NewRedisIPCMsgReceiver(ctx interface{}, queueName interface{}, redis1 interface{}, reader interface{}) *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call {
+	return &UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call{Call: _e.mock.On("NewRedisIPCMsgReceiver", ctx, queueName, redis1, reader)}
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call) Run(run func(ctx context.Context, queueName string, redis1 redis.Client, reader string)) *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 redis.Client
+		if args[2] != nil {
+			arg2 = args[2].(redis.Client)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call) Return(iPCMessageReceive common.IPCMessageReceive, err error) *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call {
+	_c.Call.Return(iPCMessageReceive, err)
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call) RunAndReturn(run func(ctx context.Context, queueName string, redis1 redis.Client, reader string) (common.IPCMessageReceive, error)) *UnitTestCallbackCollector_NewRedisIPCMsgReceiver_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// NewRedisIPCMsgSender provides a mock function for the type UnitTestCallbackCollector
+func (_mock *UnitTestCallbackCollector) NewRedisIPCMsgSender(ctx context.Context, queueName string, redis1 redis.Client, sender string) (common.IPCMessageSend, error) {
+	ret := _mock.Called(ctx, queueName, redis1, sender)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NewRedisIPCMsgSender")
+	}
+
+	var r0 common.IPCMessageSend
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, redis.Client, string) (common.IPCMessageSend, error)); ok {
+		return returnFunc(ctx, queueName, redis1, sender)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, redis.Client, string) common.IPCMessageSend); ok {
+		r0 = returnFunc(ctx, queueName, redis1, sender)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(common.IPCMessageSend)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, redis.Client, string) error); ok {
+		r1 = returnFunc(ctx, queueName, redis1, sender)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// UnitTestCallbackCollector_NewRedisIPCMsgSender_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewRedisIPCMsgSender'
+type UnitTestCallbackCollector_NewRedisIPCMsgSender_Call struct {
+	*mock.Call
+}
+
+// NewRedisIPCMsgSender is a helper method to define mock.On call
+//   - ctx context.Context
+//   - queueName string
+//   - redis1 redis.Client
+//   - sender string
+func (_e *UnitTestCallbackCollector_Expecter) NewRedisIPCMsgSender(ctx interface{}, queueName interface{}, redis1 interface{}, sender interface{}) *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call {
+	return &UnitTestCallbackCollector_NewRedisIPCMsgSender_Call{Call: _e.mock.On("NewRedisIPCMsgSender", ctx, queueName, redis1, sender)}
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call) Run(run func(ctx context.Context, queueName string, redis1 redis.Client, sender string)) *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 redis.Client
+		if args[2] != nil {
+			arg2 = args[2].(redis.Client)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call) Return(iPCMessageSend common.IPCMessageSend, err error) *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call {
+	_c.Call.Return(iPCMessageSend, err)
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call) RunAndReturn(run func(ctx context.Context, queueName string, redis1 redis.Client, sender string) (common.IPCMessageSend, error)) *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// NewTaskExecutor provides a mock function for the type UnitTestCallbackCollector
+func (_mock *UnitTestCallbackCollector) NewTaskExecutor(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport) (task.Executor, error) {
+	ret := _mock.Called(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NewTaskExecutor")
+	}
+
+	var r0 task.Executor
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport) (task.Executor, error)); ok {
+		return returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport) task.Executor); ok {
+		r0 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(task.Executor)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int, task.ExecutorSupport) error); ok {
+		r1 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// UnitTestCallbackCollector_NewTaskExecutor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewTaskExecutor'
+type UnitTestCallbackCollector_NewTaskExecutor_Call struct {
+	*mock.Call
+}
+
+// NewTaskExecutor is a helper method to define mock.On call
+//   - parentCtx context.Context
+//   - taskQueue string
+//   - workerCount int
+//   - requestBufferLen int
+//   - support task.ExecutorSupport
+func (_e *UnitTestCallbackCollector_Expecter) NewTaskExecutor(parentCtx interface{}, taskQueue interface{}, workerCount interface{}, requestBufferLen interface{}, support interface{}) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+	return &UnitTestCallbackCollector_NewTaskExecutor_Call{Call: _e.mock.On("NewTaskExecutor", parentCtx, taskQueue, workerCount, requestBufferLen, support)}
+}
+
+func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Run(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		var arg4 task.ExecutorSupport
+		if args[4] != nil {
+			arg4 = args[4].(task.ExecutorSupport)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Return(executor task.Executor, err error) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+	_c.Call.Return(executor, err)
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) RunAndReturn(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport) (task.Executor, error)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // OnComplete provides a mock function for the type UnitTestCallbackCollector
