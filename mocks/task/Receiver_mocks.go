@@ -6,11 +6,8 @@ package mocktask
 
 import (
 	"context"
-	"time"
 
-	"github.com/alwitt/tasking/common"
 	"github.com/alwitt/tasking/db"
-	"github.com/alwitt/tasking/task"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -94,139 +91,6 @@ func (_c *Receiver_Initialize_Call) Return(err error) *Receiver_Initialize_Call 
 }
 
 func (_c *Receiver_Initialize_Call) RunAndReturn(run func(ctx context.Context, activeDBClient db.Database) error) *Receiver_Initialize_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// OnTaskComplete provides a mock function for the type Receiver
-func (_mock *Receiver) OnTaskComplete(ctx context.Context, queueReceiver common.IPCMessageReceive, instanceID string, err error, timestamp time.Time) {
-	_mock.Called(ctx, queueReceiver, instanceID, err, timestamp)
-	return
-}
-
-// Receiver_OnTaskComplete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OnTaskComplete'
-type Receiver_OnTaskComplete_Call struct {
-	*mock.Call
-}
-
-// OnTaskComplete is a helper method to define mock.On call
-//   - ctx context.Context
-//   - queueReceiver common.IPCMessageReceive
-//   - instanceID string
-//   - err error
-//   - timestamp time.Time
-func (_e *Receiver_Expecter) OnTaskComplete(ctx interface{}, queueReceiver interface{}, instanceID interface{}, err interface{}, timestamp interface{}) *Receiver_OnTaskComplete_Call {
-	return &Receiver_OnTaskComplete_Call{Call: _e.mock.On("OnTaskComplete", ctx, queueReceiver, instanceID, err, timestamp)}
-}
-
-func (_c *Receiver_OnTaskComplete_Call) Run(run func(ctx context.Context, queueReceiver common.IPCMessageReceive, instanceID string, err error, timestamp time.Time)) *Receiver_OnTaskComplete_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 common.IPCMessageReceive
-		if args[1] != nil {
-			arg1 = args[1].(common.IPCMessageReceive)
-		}
-		var arg2 string
-		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		var arg3 error
-		if args[3] != nil {
-			arg3 = args[3].(error)
-		}
-		var arg4 time.Time
-		if args[4] != nil {
-			arg4 = args[4].(time.Time)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-			arg4,
-		)
-	})
-	return _c
-}
-
-func (_c *Receiver_OnTaskComplete_Call) Return() *Receiver_OnTaskComplete_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *Receiver_OnTaskComplete_Call) RunAndReturn(run func(ctx context.Context, queueReceiver common.IPCMessageReceive, instanceID string, err error, timestamp time.Time)) *Receiver_OnTaskComplete_Call {
-	_c.Run(run)
-	return _c
-}
-
-// ProcessOneIPCRequest provides a mock function for the type Receiver
-func (_mock *Receiver) ProcessOneIPCRequest(ctx context.Context, queueName string, receiver common.IPCMessageReceive, executor task.Executor) error {
-	ret := _mock.Called(ctx, queueName, receiver, executor)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ProcessOneIPCRequest")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, common.IPCMessageReceive, task.Executor) error); ok {
-		r0 = returnFunc(ctx, queueName, receiver, executor)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// Receiver_ProcessOneIPCRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ProcessOneIPCRequest'
-type Receiver_ProcessOneIPCRequest_Call struct {
-	*mock.Call
-}
-
-// ProcessOneIPCRequest is a helper method to define mock.On call
-//   - ctx context.Context
-//   - queueName string
-//   - receiver common.IPCMessageReceive
-//   - executor task.Executor
-func (_e *Receiver_Expecter) ProcessOneIPCRequest(ctx interface{}, queueName interface{}, receiver interface{}, executor interface{}) *Receiver_ProcessOneIPCRequest_Call {
-	return &Receiver_ProcessOneIPCRequest_Call{Call: _e.mock.On("ProcessOneIPCRequest", ctx, queueName, receiver, executor)}
-}
-
-func (_c *Receiver_ProcessOneIPCRequest_Call) Run(run func(ctx context.Context, queueName string, receiver common.IPCMessageReceive, executor task.Executor)) *Receiver_ProcessOneIPCRequest_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 common.IPCMessageReceive
-		if args[2] != nil {
-			arg2 = args[2].(common.IPCMessageReceive)
-		}
-		var arg3 task.Executor
-		if args[3] != nil {
-			arg3 = args[3].(task.Executor)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-		)
-	})
-	return _c
-}
-
-func (_c *Receiver_ProcessOneIPCRequest_Call) Return(err error) *Receiver_ProcessOneIPCRequest_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *Receiver_ProcessOneIPCRequest_Call) RunAndReturn(run func(ctx context.Context, queueName string, receiver common.IPCMessageReceive, executor task.Executor) error) *Receiver_ProcessOneIPCRequest_Call {
 	_c.Call.Return(run)
 	return _c
 }

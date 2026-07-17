@@ -141,27 +141,34 @@ func TestInitializeBufferDrain(t *testing.T) {
 	type skipCase struct {
 		name string
 		msg  goutilsRedis.QueueMessageEnvelope
+		// expectRecord whether a poison-message audit event is recorded. A wrong-Type but
+		// otherwise valid message is merely ignored (not poison), so it records nothing.
+		expectRecord bool
 	}
 	skipCases := []skipCase{
 		{
-			name: "unreadable message skipped",
-			msg:  unreadableEnvelope{err: simErr},
+			name:         "unreadable message skipped",
+			msg:          unreadableEnvelope{err: simErr},
+			expectRecord: true,
 		},
 		{
-			name: "unparsable message skipped",
-			msg:  stringEnvelope{payload: "not-json"},
+			name:         "unparsable message skipped",
+			msg:          stringEnvelope{payload: "not-json"},
+			expectRecord: true,
 		},
 		{
 			name: "wrong-type message skipped",
 			msg: models.PrepareIPCMsgTaskExecutionProcessSucceeded(
 				"scheduler", ulid.Make().String(), time.Now().UTC(),
 			),
+			expectRecord: false,
 		},
 		{
 			name: "unsupported-type message skipped",
 			msg: models.PrepareIPCMsgNewPendingTask(
 				"scheduler", ulid.Make().String(), time.Now().UTC(),
 			),
+			expectRecord: true,
 		},
 	}
 	for _, tc := range skipCases {
@@ -170,6 +177,16 @@ func TestInitializeBufferDrain(t *testing.T) {
 
 			tr := newInitTestReceiver(t)
 			scriptDequeue(tr.ipcReceiver, tc.msg)
+
+			if tc.expectRecord {
+				// A poison message is recorded as an audit event against the active
+				// session (the mockDatabase passed to Initialize).
+				tr.mockDatabase.EXPECT().
+					RecordInvalidTaskIPCMessage(
+						mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+					).
+					Return(nil)
+			}
 
 			// Reconcile is trivially empty: the skipped message never becomes a request.
 			tr.mockDatabase.EXPECT().
@@ -330,10 +347,10 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id1, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id1, mock.Anything, mock.Anything).
 			Return(nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id2, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id2, mock.Anything, mock.Anything).
 			Return(nil)
 
 		notified := map[string]bool{}
@@ -385,7 +402,7 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything).
 			Return(simErr)
 
 		err := tr.receiver.Initialize(utCtx, tr.mockDatabase)
@@ -409,7 +426,7 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything).
 			Return(nil)
 		tr.sender.EXPECT().
 			EnqueueMessage(mock.Anything, mock.Anything).

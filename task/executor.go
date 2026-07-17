@@ -90,7 +90,9 @@ func NewExecutor(
 	requestBufferLen int,
 	support ExecutorSupport,
 ) (Executor, error) {
-	logTags := log.Fields{"module": "task", "component": "task-executor", "queue": taskQueue}
+	logTags := log.Fields{
+		"package": "tasking", "module": "task", "component": "task-executor", "queue": taskQueue,
+	}
 
 	validate := validator.New()
 	if err := validate.Struct(&support); err != nil {
@@ -375,6 +377,7 @@ func (e *executorImpl) processExecutionInstance(
 
 	// Define the post-processing steps
 	defer func() {
+		completedAt := time.Now().UTC()
 		postProcessCtx, postProcessCtxCancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer postProcessCtxCancel()
 		if dbErr := e.support.Persistence.UseDatabaseInTransaction(
@@ -382,13 +385,15 @@ func (e *executorImpl) processExecutionInstance(
 			func(dbCtx context.Context, dbClient db.Database) error {
 				// Mark that task completed
 				if taskErr != nil {
-					if err := dbClient.MarkTaskExecFailed(dbCtx, instanceID, taskErr.Error()); err != nil {
+					if err := dbClient.MarkTaskExecFailed(
+						dbCtx, instanceID, taskErr.Error(), completedAt,
+					); err != nil {
 						return models.NewPersistenceError(
 							fmt.Sprintf("failed to mark execution instance %s failed", instanceID), err, true,
 						)
 					}
 				} else {
-					if err := dbClient.MarkTaskExecProcessed(dbCtx, instanceID); err != nil {
+					if err := dbClient.MarkTaskExecProcessed(dbCtx, instanceID, completedAt); err != nil {
 						return models.NewPersistenceError(
 							fmt.Sprintf("failed to mark execution instance %s complete", instanceID), err, true,
 						)

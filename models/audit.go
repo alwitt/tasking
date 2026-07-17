@@ -28,6 +28,8 @@ const (
 	SystemEventTypeTimedOutTask SystemEventTypeENUM = "TIMED_OUT_TASK"
 	// SystemEventTypeDeleteTask deleted a system task
 	SystemEventTypeDeleteTask SystemEventTypeENUM = "DELETE_TASK"
+	// SystemEventTypeInvalidTaskIPCMessage a task IPC message could not be processed
+	SystemEventTypeInvalidTaskIPCMessage SystemEventTypeENUM = "INVALID_TASK_IPC_MESSAGE"
 )
 
 // Values all valid SystemEventTypeENUM values
@@ -39,6 +41,7 @@ func (SystemEventTypeENUM) Values() []SystemEventTypeENUM {
 		SystemEventTypeCancelledTask,
 		SystemEventTypeTimedOutTask,
 		SystemEventTypeDeleteTask,
+		SystemEventTypeInvalidTaskIPCMessage,
 	}
 }
 
@@ -85,6 +88,14 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 			)
 		}
 		return parsed, validate(&parsed)
+	case SystemEventTypeInvalidTaskIPCMessage:
+		var parsed SystemEventInvalidTaskIPCMessage
+		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
 	default:
 		return nil, goutils.NewConsistencyError(
 			fmt.Sprintf("unsupported system event type '%s'", a.EventType), nil, true,
@@ -96,4 +107,17 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 type SystemEventTaskEvents struct {
 	// TaskID task ID
 	TaskID string `json:"task_id" validate:"required"`
+}
+
+// SystemEventInvalidTaskIPCMessage records a task IPC message an IPC receiver got but could
+// not process (unreadable, unparsable, or of an unsupported/unknown type). The parent
+// application is responsible for reviewing these.
+type SystemEventInvalidTaskIPCMessage struct {
+	// Receiver name of the IPC message receiver that rejected the message (e.g. "scheduler"
+	// for the scheduler; the worker's config.Name for a task Receiver)
+	Receiver string `json:"receiver" validate:"required"`
+	// RawMessage the raw message payload as received, if it was readable
+	RawMessage string `json:"raw_message"`
+	// Reason human-readable reason the message was rejected
+	Reason string `json:"reason"`
 }

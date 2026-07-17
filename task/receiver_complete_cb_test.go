@@ -135,7 +135,7 @@ func TestOnTaskComplete(t *testing.T) {
 				Return(tc.deleteErr)
 
 			// Must not panic or propagate regardless of enqueue/delete errors.
-			r.OnTaskComplete(utCtx, queueReceiver, instanceID, tc.taskErr, time.Now().UTC())
+			r.onTaskComplete(utCtx, queueReceiver, instanceID, tc.taskErr, time.Now().UTC())
 
 			// The recorded-message pool entry is always cleared after completion.
 			_, stillPresent := r.execInstanceOriginalIPCMsg[instanceID]

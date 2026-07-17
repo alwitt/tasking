@@ -16,15 +16,15 @@ import (
 
 // CommonListEntryQueryFilter common query filter when listing data entries
 type CommonListEntryQueryFilter struct {
-	Limit  *int
-	Offset *int
+	Limit  *int `validate:"omitempty,gt=0"`
+	Offset *int `validate:"omitempty,gte=0"`
 }
 
 // SystemEventQueryFilter audit event query filter conditions
 type SystemEventQueryFilter struct {
 	CommonListEntryQueryFilter
 	// EventTypes the specific event types to query for
-	EventTypes []models.SystemEventTypeENUM
+	EventTypes []models.SystemEventTypeENUM `validate:"omitempty,dive,system_event_type"`
 	// EventsAfter filter for events after this timestamp
 	EventsAfter *time.Time
 	// EventsBefore filter for events before this timestamp
@@ -39,9 +39,9 @@ type TaskQueryFilter struct {
 	// TaskNames the specific task purpose names to query for
 	TaskNames []string
 	// TaskScheduleClasses the specific task schedule classes to query for
-	TaskScheduleClasses []models.TaskScheduleClassENUM
+	TaskScheduleClasses []models.TaskScheduleClassENUM `validate:"omitempty,dive,task_schedule_class"`
 	// TaskStates the specific task states to query for
-	TaskStates []models.TaskStateENUM
+	TaskStates []models.TaskStateENUM `validate:"omitempty,dive,task_state"`
 	// TargetDeadline tasks with deadline set before this timestamp
 	TargetDeadline *time.Time
 }
@@ -54,9 +54,11 @@ type TaskExecutionQueryFilter struct {
 	// ExecutionWorkerName fetch task execution instances acquired by this worker
 	ExecutionWorkerName *string
 	// ExecClasses the specific execution classes to query for
-	ExecClasses []models.TaskExecutionClassENUM
+	ExecClasses []models.TaskExecutionClassENUM `validate:"omitempty,dive,task_execute_class"`
 	// ExecStates the specific execution states to query for
-	ExecStates []models.TaskExecutionStateENUM
+	ExecStates []models.TaskExecutionStateENUM `validate:"omitempty,dive,task_execute_state"`
+	// TerminalStates the specific terminal states to query for
+	TerminalStates []models.TaskExecutionStateENUM `validate:"omitempty,dive,task_execute_state"`
 	// TargetDeadline execution instances with deadline set before this timestamp
 	TargetDeadline *time.Time
 	// TargetStart execution instances set to start before this timestamp
@@ -98,6 +100,17 @@ type Database interface {
 	ListSystemEvents(
 		ctx context.Context, filters SystemEventQueryFilter,
 	) ([]models.SystemEventAudit, error)
+
+	/*
+		RecordInvalidTaskIPCMessage record an audit event for a task IPC message that could not
+		be processed (unreadable, unparsable, or of an unsupported/unknown type).
+
+			@param ctx context.Context - execution context
+			@param receiver string - name of the IPC receiver that rejected the message
+			@param rawMessage string - the raw message payload, if it was readable
+			@param reason string - human-readable reason the message was rejected
+	*/
+	RecordInvalidTaskIPCMessage(ctx context.Context, receiver, rawMessage, reason string) error
 
 	// ------------------------------------------------------------------------------------
 	// Task
@@ -157,7 +170,7 @@ type Database interface {
 	MarkTaskFailed(ctx context.Context, taskID string) error
 
 	/*
-		MarkTaskCancelling mark a task as cancelled
+		MarkTaskCancelling mark a task as cancelling
 
 			@param ctx context.Context - execution context
 			@param taskID string - task ID
@@ -296,8 +309,9 @@ type Database interface {
 
 			@param ctx context.Context - execution context
 			@param instanceID string - task exec instance ID
+			@param terminatedAt time.Time - timestamp when the instance reached this terminal state
 	*/
-	MarkTaskExecProcessed(ctx context.Context, instanceID string) error
+	MarkTaskExecProcessed(ctx context.Context, instanceID string, terminatedAt time.Time) error
 
 	/*
 		MarkTaskExecFailed mark a task execution instance is failed to process
@@ -305,8 +319,11 @@ type Database interface {
 			@param ctx context.Context - execution context
 			@param instanceID string - task exec instance ID
 			@param errorMsg string - error message associated with the failure
+			@param terminatedAt time.Time - timestamp when the instance reached this terminal state
 	*/
-	MarkTaskExecFailed(ctx context.Context, instanceID string, errorMsg string) error
+	MarkTaskExecFailed(
+		ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time,
+	) error
 
 	/*
 		MarkTaskExecFinalized mark a task execution instance is finalized
@@ -322,8 +339,11 @@ type Database interface {
 			@param ctx context.Context - execution context
 			@param instanceID string - task exec instance ID
 			@param cancelMsg string - cancellation message associated with the failure
+			@param terminatedAt time.Time - timestamp when the instance reached this terminal state
 	*/
-	MarkTaskExecCancelled(ctx context.Context, instanceID string, cancelMsg string) error
+	MarkTaskExecCancelled(
+		ctx context.Context, instanceID string, cancelMsg string, terminatedAt time.Time,
+	) error
 }
 
 // databaseImpl implements Database

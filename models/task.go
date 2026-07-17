@@ -332,6 +332,15 @@ type TaskExecution struct {
 	// ExecutionState execution instance state type
 	ExecutionState TaskExecutionStateENUM `json:"state" gorm:"column:state;not null" validate:"required,task_execute_state"`
 
+	// TerminalState the terminal state the execution instance reached before it was
+	// finalized: one of Processed, Failed, or Cancelled. Nil until the instance ends.
+	// Because every ended instance is moved to FINALIZED, `ExecutionState` alone can no
+	// longer report the outcome; this field preserves it.
+	TerminalState *TaskExecutionStateENUM `json:"terminal_state,omitempty" gorm:"column:terminal_state;default:null" validate:"omitempty,task_execute_state"`
+	// TerminatedAt the timestamp when the execution instance reached its terminal state.
+	// Nil until the instance ends.
+	TerminatedAt *time.Time `json:"terminated_at,omitempty" gorm:"column:terminated_at;default:null"`
+
 	// TargetEnqueueTime target time to enqueue instance for worker to pickup
 	//
 	// This can't dictate when the task will execute, rather when it will be queue to execute
@@ -356,43 +365,47 @@ type TaskExecution struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// taskExecutionStateTransitions the task execution instance state machine: for each state,
+// the set of states it may transition to directly. This is the single source of truth for
+// both ValidNextState (is a transition legal) and IsStateAtOrPast (is a state at or downstream
+// of another) - the two must not encode the graph independently or they can drift.
+var taskExecutionStateTransitions = map[TaskExecutionStateENUM]map[TaskExecutionStateENUM]bool{
+	TaskExecutionStateDefined: {
+		TaskExecutionStateScheduled: true,
+		TaskExecutionStateEnqueued:  true,
+		TaskExecutionStateCancelled: true,
+	},
+	TaskExecutionStateScheduled: {
+		TaskExecutionStateEnqueued:  true,
+		TaskExecutionStateCancelled: true,
+	},
+	TaskExecutionStateEnqueued: {
+		TaskExecutionStateAcquired:  true,
+		TaskExecutionStateFailed:    true,
+		TaskExecutionStateCancelled: true,
+	},
+	TaskExecutionStateAcquired: {
+		TaskExecutionStateProcessing: true,
+		TaskExecutionStateProcessed:  true,
+		TaskExecutionStateFailed:     true,
+		TaskExecutionStateCancelled:  true,
+	},
+	TaskExecutionStateProcessing: {
+		TaskExecutionStateProcessed: true,
+		TaskExecutionStateFailed:    true,
+		TaskExecutionStateCancelled: true,
+	},
+	TaskExecutionStateProcessed: {
+		TaskExecutionStateFinalized: true,
+	},
+	TaskExecutionStateFailed: {
+		TaskExecutionStateFinalized: true,
+	},
+}
+
 // ValidNextState verify the task execution can transition to new state
 func (e TaskExecution) ValidNextState(newState TaskExecutionStateENUM) error {
-	statesWithTransitions := map[TaskExecutionStateENUM]map[TaskExecutionStateENUM]bool{
-		TaskExecutionStateDefined: {
-			TaskExecutionStateScheduled: true,
-			TaskExecutionStateEnqueued:  true,
-			TaskExecutionStateCancelled: true,
-		},
-		TaskExecutionStateScheduled: {
-			TaskExecutionStateEnqueued:  true,
-			TaskExecutionStateCancelled: true,
-		},
-		TaskExecutionStateEnqueued: {
-			TaskExecutionStateAcquired:  true,
-			TaskExecutionStateFailed:    true,
-			TaskExecutionStateCancelled: true,
-		},
-		TaskExecutionStateAcquired: {
-			TaskExecutionStateProcessing: true,
-			TaskExecutionStateProcessed:  true,
-			TaskExecutionStateFailed:     true,
-			TaskExecutionStateCancelled:  true,
-		},
-		TaskExecutionStateProcessing: {
-			TaskExecutionStateProcessed: true,
-			TaskExecutionStateFailed:    true,
-			TaskExecutionStateCancelled: true,
-		},
-		TaskExecutionStateProcessed: {
-			TaskExecutionStateFinalized: true,
-		},
-		TaskExecutionStateFailed: {
-			TaskExecutionStateFinalized: true,
-		},
-	}
-
-	availableNextStates, ok := statesWithTransitions[e.ExecutionState]
+	availableNextStates, ok := taskExecutionStateTransitions[e.ExecutionState]
 	if !ok {
 		return goutils.NewConsistencyError(
 			fmt.Sprintf(
@@ -410,6 +423,64 @@ func (e TaskExecution) ValidNextState(newState TaskExecutionStateENUM) error {
 	}
 
 	return nil
+}
+
+/*
+IsStateAtOrPast report whether this execution instance's current state is `reference` itself
+or a state reachable downstream of `reference` by following the transition graph forward.
+
+This is the basis for idempotency guards in the scheduler handlers. A handler whose job is to
+drive an instance to some target state can call this to detect a redundant/racing delivery:
+if the instance is already at or past the handler's own precondition (or the state it would
+produce), the work is already done and the delivery is a safe no-op. A state that is strictly
+upstream of `reference` returns false, so a genuine out-of-order delivery is NOT masked and
+still surfaces (via the subsequent transition attempt) as a consistency error.
+
+	@param reference TaskExecutionStateENUM - the state to compare against
+	@returns true if the current state is `reference` or reachable downstream from it
+*/
+func (e TaskExecution) IsStateAtOrPast(reference TaskExecutionStateENUM) bool {
+	if e.ExecutionState == reference {
+		return true
+	}
+
+	// Breadth-first walk forward from `reference`; if we reach the current state, it is
+	// downstream of `reference`.
+	visited := map[TaskExecutionStateENUM]bool{reference: true}
+	queue := []TaskExecutionStateENUM{reference}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for next := range taskExecutionStateTransitions[current] {
+			if next == e.ExecutionState {
+				return true
+			}
+			if !visited[next] {
+				visited[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	return false
+}
+
+/*
+HasEnded report whether this execution instance has already reached an outcome and is no
+longer live: it is at or past one of the parallel terminal-outcome states (Processed, Failed,
+or Cancelled). Unlike IsStateAtOrPast (which walks a single downstream chain), these three are
+separate branches of the graph, so "ended" is the union of being at or past any of them.
+
+This is the idempotency basis for handlers whose precondition is "the instance is still live"
+- notably the timeout handler, which should no-op rather than error when an instance already
+completed, failed, or was cancelled by the time the timeout delivery arrives.
+
+	@returns true if the instance has reached a terminal outcome
+*/
+func (e TaskExecution) HasEnded() bool {
+	return e.IsStateAtOrPast(TaskExecutionStateProcessed) ||
+		e.IsStateAtOrPast(TaskExecutionStateFailed) ||
+		e.IsStateAtOrPast(TaskExecutionStateCancelled)
 }
 
 // ======================================================================================

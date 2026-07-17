@@ -152,6 +152,7 @@ func TestProcessOneIPCRequestValidation(t *testing.T) {
 			assert := assert.New(t)
 
 			mockClient := mockdb.NewClient(t)
+			mockDatabase := mockdb.NewDatabase(t)
 			mockSender := mockcommon.NewIPCMessageSend(t)
 			queueReceiver := mockcommon.NewIPCMessageReceive(t)
 			executor := &stubExecutor{}
@@ -163,12 +164,23 @@ func TestProcessOneIPCRequestValidation(t *testing.T) {
 				Return(tc.dequeueMsg, tc.dequeueErr)
 
 			if tc.expectDelete {
+				// A dropped (poison) message is recorded as an audit event before it
+				// is deleted from the buffer.
+				mockClient.EXPECT().
+					UseDatabaseInTransaction(mock.Anything, mock.Anything).
+					RunAndReturn(runTxAgainst(mockDatabase))
+				mockDatabase.EXPECT().
+					RecordInvalidTaskIPCMessage(
+						mock.Anything, r.config.Name+"/receiver", mock.Anything, mock.Anything,
+					).
+					Return(nil)
+
 				queueReceiver.EXPECT().
 					DeleteBufferedMessage(mock.Anything, tc.dequeueMsg).
 					Return(nil)
 			}
 
-			err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+			err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 
 			if tc.expectFatal {
 				assert.NotNil(err)
@@ -236,7 +248,7 @@ func TestProcessOneIPCRequestClaimOwnership(t *testing.T) {
 			}).
 			Return(nil)
 
-		err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.Nil(err)
 		assert.Empty(r.execInstanceOriginalIPCMsg)
 		assert.Zero(executor.submitCalls)
@@ -268,7 +280,7 @@ func TestProcessOneIPCRequestClaimOwnership(t *testing.T) {
 			MarkTaskExecAcquired(mock.Anything, instanceID, r.config.Name).
 			Return(models.NewSQLError("boom", simErr, false))
 
-		err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.NotNil(err)
 		var recvErr models.TaskReceiverError
 		assert.True(
@@ -320,7 +332,7 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			MarkTaskExecAcquired(mock.Anything, instanceID, r.config.Name).
 			Return(nil)
 
-		err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.Nil(err)
 
 		// Submit succeeded exactly once against the claimed instance.
@@ -364,7 +376,7 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			DeleteBufferedMessage(mock.Anything, msg).
 			Return(nil)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
 			Return(nil)
 		mockSender.EXPECT().
 			EnqueueMessage(mock.Anything, mock.Anything).
@@ -376,7 +388,7 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			}).
 			Return(nil)
 
-		err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.Nil(err)
 		assert.Empty(r.execInstanceOriginalIPCMsg)
 		assert.Equal(1, executor.submitCalls)
@@ -413,10 +425,10 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			DeleteBufferedMessage(mock.Anything, msg).
 			Return(nil)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
 			Return(models.NewSQLError("boom", simErr, false))
 
-		err := r.ProcessOneIPCRequest(utCtx, queueName, queueReceiver, executor)
+		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.NotNil(err)
 		var sqlErr models.SQLError
 		assert.True(

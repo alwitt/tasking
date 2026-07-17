@@ -62,43 +62,6 @@ type Receiver interface {
 			@param ctx context.Context - execution context
 	*/
 	Stop(ctx context.Context) error
-
-	/*
-		OnTaskComplete callback used by task executors to report status of processing
-
-		!!This function is exposed to simplify the testing process!! Do not call directly.
-
-			@param ctx context.Context - execution context
-			@param queueReceiver common.IPCMessageReceive - original IPC message queue the task execution
-			    request was received on
-			@param instanceID string - task execution instance ID
-			@param err error - any errors encountered while executing the task
-			@param timestamp time.Time - task execution completion timestamp
-	*/
-	OnTaskComplete(
-		ctx context.Context,
-		queueReceiver common.IPCMessageReceive,
-		instanceID string,
-		err error,
-		timestamp time.Time,
-	)
-
-	/*
-		ProcessOneIPCRequest primary logic which processes one IPC requests on a particular task queue
-
-		!!This function is exposed to simplify the testing process!! Do not call directly.
-
-			@param ctx context.Context - execution context
-			@param queueName string - queue name
-			@param receiver common.IPCMessageReceive - IPC task queue receiver
-			@param executor Executor - IPC task queue executor
-	*/
-	ProcessOneIPCRequest(
-		ctx context.Context,
-		queueName string,
-		receiver common.IPCMessageReceive,
-		executor Executor,
-	) error
 }
 
 // receiverImpl implements receiver
@@ -149,7 +112,10 @@ func NewReceiver(
 	parentCtx context.Context, params NewReceiverParams,
 ) (Receiver, error) {
 	logTags := log.Fields{
-		"module": "task", "component": "task-receiver", "name": params.Config.Name,
+		"package":   "tasking",
+		"module":    "task",
+		"component": "task-receiver",
+		"name":      params.Config.Name,
 	}
 
 	validate := validator.New()
@@ -203,7 +169,7 @@ func NewReceiver(
 				OnCompleteCB: func(
 					ctx context.Context, instanceID string, err error, timestamp time.Time,
 				) {
-					instance.OnTaskComplete(
+					instance.onTaskComplete(
 						ctx, instance.ipcReceivers[oneQueue.Name], instanceID, err, timestamp,
 					)
 				},
@@ -263,6 +229,40 @@ func (r *receiverImpl) reportTaskExecutionEngineFailed(
 	return r.schedulerIPCSender.EnqueueMessage(ctx, msg)
 }
 
+/*
+recordInvalidMessage record an audit event for a poison IPC message (one that can never be
+processed) received on a task queue. The audit write is best-effort: if it fails, the failure
+is logged but not propagated, so an un-auditable poison message cannot stall the receiver.
+
+It runs through db.ActiveSessionWrapper so it works both on the live processing path (pass a
+nil activeDBClient - a fresh transaction is opened) and during Initialize's reconciliation
+(pass the active session so it joins the ongoing work).
+
+	@param ctx context.Context - execution context
+	@param activeDBClient db.Database - active database session, or nil to open a new one
+	@param rawPayload string - the raw message payload, if it was readable ("" otherwise)
+	@param reason string - human-readable reason the message was rejected
+*/
+func (r *receiverImpl) recordInvalidMessage(
+	ctx context.Context, activeDBClient db.Database, rawPayload, reason string,
+) {
+	logTags := r.GetLogTagsForContext(ctx)
+
+	if dbErr := db.ActiveSessionWrapper(
+		ctx, activeDBClient, r.support.Persistence,
+		func(dbCtx context.Context, dbClient db.Database) error {
+			return dbClient.RecordInvalidTaskIPCMessage(
+				dbCtx, r.config.Name+"/receiver", rawPayload, reason,
+			)
+		},
+	); dbErr != nil {
+		log.
+			WithError(dbErr).
+			WithFields(goutils.UpdateCodePositionInTags(logTags)).
+			Errorf("Failed to record audit event for invalid IPC message (%s)", reason)
+	}
+}
+
 // isFatalDBError report whether the error chain contains a models.SQLError, which
 // indicates the database or the connection to it has failed. Such errors are fatal
 // for the receiver and must stop the worker rather than be recovered per-request.
@@ -272,9 +272,7 @@ func isFatalDBError(err error) bool {
 }
 
 /*
-OnTaskComplete callback used by task executors to report status of processing
-
-!!This function is exposed to simplify the testing process!! Do not call directly.
+onTaskComplete callback used by task executors to report status of processing
 
 	@param ctx context.Context - execution context
 	@param queueReceiver common.IPCMessageReceive - original IPC message queue the task execution
@@ -283,7 +281,7 @@ OnTaskComplete callback used by task executors to report status of processing
 	@param err error - any errors encountered while executing the task
 	@param timestamp time.Time - task execution completion timestamp
 */
-func (r *receiverImpl) OnTaskComplete(
+func (r *receiverImpl) onTaskComplete(
 	ctx context.Context,
 	queueReceiver common.IPCMessageReceive,
 	instanceID string,
@@ -383,6 +381,7 @@ func (r *receiverImpl) Initialize(
 					WithError(err).
 					WithFields(goutils.UpdateCodePositionInTags(logTags)).
 					Errorf("Discarding unreadable message from queue '%s' buffer", queueName)
+				r.recordInvalidMessage(ctx, activeDBClient, "", "unreadable payload")
 				continue
 			}
 			parsed, err := models.ParseIPCMessage(r.validator, []byte(payload))
@@ -391,6 +390,7 @@ func (r *receiverImpl) Initialize(
 					WithError(err).
 					WithFields(goutils.UpdateCodePositionInTags(logTags)).
 					Errorf("Discarding unparsable message '%s' from queue '%s' buffer", payload, queueName)
+				r.recordInvalidMessage(ctx, activeDBClient, payload, "unparsable message")
 				continue
 			}
 
@@ -411,6 +411,10 @@ func (r *receiverImpl) Initialize(
 						"Discarding unsupported message type '%s' from queue '%s' buffer",
 						reflect.TypeOf(typed), queueName,
 					)
+				r.recordInvalidMessage(
+					ctx, activeDBClient, payload,
+					fmt.Sprintf("unsupported message type '%s'", reflect.TypeOf(typed)),
+				)
 				continue
 			}
 		}
@@ -514,7 +518,10 @@ func (r *receiverImpl) Initialize(
 				}
 				for _, instance := range otherWorkerOwnedInstance {
 					if err := dbClient.MarkTaskExecFailed(
-						dbCtx, instance.ID, "execution worker restarted before completion",
+						dbCtx,
+						instance.ID,
+						"execution worker restarted before completion",
+						time.Now().UTC(),
 					); err != nil {
 						return models.NewPersistenceError(
 							fmt.Sprintf(
@@ -583,16 +590,14 @@ func (r *receiverImpl) Initialize(
 }
 
 /*
-ProcessOneIPCRequest primary logic which processes one IPC requests on a particular task queue
-
-!!This function is exposed to simplify the testing process!! Do not call directly.
+processOneIPCRequest primary logic which processes one IPC requests on a particular task queue
 
 	@param ctx context.Context - execution context
 	@param queueName string - queue name
 	@param receiver common.IPCMessageReceive - IPC task queue receiver
 	@param executor Executor - IPC task queue executor
 */
-func (r *receiverImpl) ProcessOneIPCRequest(
+func (r *receiverImpl) processOneIPCRequest(
 	ctx context.Context,
 	queueName string,
 	receiver common.IPCMessageReceive,
@@ -628,22 +633,24 @@ func (r *receiverImpl) ProcessOneIPCRequest(
 
 	payload, err := msg.StringPayload()
 	if err != nil {
-		// Bad request: drop the message and move on
+		// Bad request: record an audit event, drop the message and move on
 		log.
 			WithError(err).
 			WithFields(goutils.UpdateCodePositionInTags(logTags)).
 			Error("Discarding unreadable message from queue")
+		r.recordInvalidMessage(ctx, nil, "", "unreadable payload")
 		discardBadMessage()
 		return nil
 	}
 
 	parsed, err := models.ParseIPCMessage(r.validator, []byte(payload))
 	if err != nil {
-		// Bad request: drop the message and move on
+		// Bad request: record an audit event, drop the message and move on
 		log.
 			WithError(err).
 			WithFields(goutils.UpdateCodePositionInTags(logTags)).
 			Errorf("Discarding unparsable message '%s' from queue", payload)
+		r.recordInvalidMessage(ctx, nil, payload, "unparsable message")
 		discardBadMessage()
 		return nil
 	}
@@ -654,19 +661,27 @@ func (r *receiverImpl) ProcessOneIPCRequest(
 		if typed.Type == models.IPCMsgTypePendingInstance {
 			execRequest = typed
 		} else {
-			// Bad request: drop the message and move on
+			// Bad request: record an audit event, drop the message and move on
 			log.
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
 				Infof("Discarding invalid IPC message '%s'", payload)
+			r.recordInvalidMessage(
+				ctx, nil, payload,
+				fmt.Sprintf("unsupported execute-instance message type '%s'", typed.Type),
+			)
 			discardBadMessage()
 			return nil
 		}
 
 	default:
-		// Bad request: drop the message and move on
+		// Bad request: record an audit event, drop the message and move on
 		log.
 			WithFields(goutils.UpdateCodePositionInTags(logTags)).
 			Errorf("Discarding unsupported message type '%s' on queue", reflect.TypeOf(typed))
+		r.recordInvalidMessage(
+			ctx, nil, payload,
+			fmt.Sprintf("unsupported message type '%s'", reflect.TypeOf(typed)),
+		)
 		discardBadMessage()
 		return nil
 	}
@@ -778,7 +793,7 @@ func (r *receiverImpl) ProcessOneIPCRequest(
 			ctx,
 			func(dbCtx context.Context, dbClient db.Database) error {
 				if err := dbClient.MarkTaskExecFailed(
-					dbCtx, execRequest.InstanceID, submitErr.Error(),
+					dbCtx, execRequest.InstanceID, submitErr.Error(), time.Now().UTC(),
 				); err != nil {
 					return models.NewPersistenceError(
 						fmt.Sprintf(
@@ -844,7 +859,7 @@ func (r *receiverImpl) processOneQueue(
 			break
 		}
 
-		if err := r.ProcessOneIPCRequest(r.workerCtx, queueName, receiver, executor); err != nil {
+		if err := r.processOneIPCRequest(r.workerCtx, queueName, receiver, executor); err != nil {
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).

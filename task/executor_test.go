@@ -289,7 +289,7 @@ func TestExecutorExecutionFailure(t *testing.T) {
 
 	// Post-processing records the failure.
 	mockDatabase.EXPECT().
-		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything).
+		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
 		Return(nil)
 
 	// Observe the async result via the OnComplete callback.
@@ -351,7 +351,7 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 			processorErr: nil,
 			setupPostProcess: func(mockDatabase *mockdb.Database, instanceID string) {
 				mockDatabase.EXPECT().
-					MarkTaskExecProcessed(mock.Anything, instanceID).
+					MarkTaskExecProcessed(mock.Anything, instanceID, mock.Anything).
 					Return(dbFailure)
 			},
 		},
@@ -360,7 +360,7 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 			processorErr: processorErr,
 			setupPostProcess: func(mockDatabase *mockdb.Database, instanceID string) {
 				mockDatabase.EXPECT().
-					MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything).
+					MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
 					Return(dbFailure)
 			},
 		},
@@ -482,7 +482,7 @@ func TestExecutorHappyPath(t *testing.T) {
 		Return(nil)
 
 	// Post-processing marks the instance processed.
-	mockDatabase.EXPECT().MarkTaskExecProcessed(mock.Anything, instanceID).Return(nil)
+	mockDatabase.EXPECT().MarkTaskExecProcessed(mock.Anything, instanceID, mock.Anything).Return(nil)
 
 	// Observe the async result via the OnComplete callback.
 	complete := make(chan error, 1)

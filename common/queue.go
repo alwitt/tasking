@@ -137,7 +137,8 @@ func NewRedisIPCMessageReceive(
 	ctx context.Context, queueName string, redis goutilsRedis.Client, reader string,
 ) (IPCMessageReceive, error) {
 	logTags := log.Fields{
-		"module":    "task",
+		"package":   "tasking",
+		"module":    "common",
 		"component": "redis-ipc-msg-receive",
 		"queue":     queueName,
 		"reader":    reader,
@@ -303,7 +304,8 @@ func NewRedisIPCMessageSend(
 	ctx context.Context, queueName string, redis goutilsRedis.Client, sender string,
 ) (IPCMessageSend, error) {
 	logTags := log.Fields{
-		"module":    "task",
+		"package":   "tasking",
+		"module":    "common",
 		"component": "redis-ipc-msg-send",
 		"queue":     queueName,
 		"sender":    sender,

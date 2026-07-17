@@ -1081,16 +1081,16 @@ func (_c *Database_MarkTaskExecAcquired_Call) RunAndReturn(run func(ctx context.
 }
 
 // MarkTaskExecCancelled provides a mock function for the type Database
-func (_mock *Database) MarkTaskExecCancelled(ctx context.Context, instanceID string, cancelMsg string) error {
-	ret := _mock.Called(ctx, instanceID, cancelMsg)
+func (_mock *Database) MarkTaskExecCancelled(ctx context.Context, instanceID string, cancelMsg string, terminatedAt time.Time) error {
+	ret := _mock.Called(ctx, instanceID, cancelMsg, terminatedAt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for MarkTaskExecCancelled")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
-		r0 = returnFunc(ctx, instanceID, cancelMsg)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, instanceID, cancelMsg, terminatedAt)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1106,11 +1106,12 @@ type Database_MarkTaskExecCancelled_Call struct {
 //   - ctx context.Context
 //   - instanceID string
 //   - cancelMsg string
-func (_e *Database_Expecter) MarkTaskExecCancelled(ctx interface{}, instanceID interface{}, cancelMsg interface{}) *Database_MarkTaskExecCancelled_Call {
-	return &Database_MarkTaskExecCancelled_Call{Call: _e.mock.On("MarkTaskExecCancelled", ctx, instanceID, cancelMsg)}
+//   - terminatedAt time.Time
+func (_e *Database_Expecter) MarkTaskExecCancelled(ctx interface{}, instanceID interface{}, cancelMsg interface{}, terminatedAt interface{}) *Database_MarkTaskExecCancelled_Call {
+	return &Database_MarkTaskExecCancelled_Call{Call: _e.mock.On("MarkTaskExecCancelled", ctx, instanceID, cancelMsg, terminatedAt)}
 }
 
-func (_c *Database_MarkTaskExecCancelled_Call) Run(run func(ctx context.Context, instanceID string, cancelMsg string)) *Database_MarkTaskExecCancelled_Call {
+func (_c *Database_MarkTaskExecCancelled_Call) Run(run func(ctx context.Context, instanceID string, cancelMsg string, terminatedAt time.Time)) *Database_MarkTaskExecCancelled_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1124,10 +1125,15 @@ func (_c *Database_MarkTaskExecCancelled_Call) Run(run func(ctx context.Context,
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -1138,22 +1144,22 @@ func (_c *Database_MarkTaskExecCancelled_Call) Return(err error) *Database_MarkT
 	return _c
 }
 
-func (_c *Database_MarkTaskExecCancelled_Call) RunAndReturn(run func(ctx context.Context, instanceID string, cancelMsg string) error) *Database_MarkTaskExecCancelled_Call {
+func (_c *Database_MarkTaskExecCancelled_Call) RunAndReturn(run func(ctx context.Context, instanceID string, cancelMsg string, terminatedAt time.Time) error) *Database_MarkTaskExecCancelled_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // MarkTaskExecFailed provides a mock function for the type Database
-func (_mock *Database) MarkTaskExecFailed(ctx context.Context, instanceID string, errorMsg string) error {
-	ret := _mock.Called(ctx, instanceID, errorMsg)
+func (_mock *Database) MarkTaskExecFailed(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time) error {
+	ret := _mock.Called(ctx, instanceID, errorMsg, terminatedAt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for MarkTaskExecFailed")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
-		r0 = returnFunc(ctx, instanceID, errorMsg)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, instanceID, errorMsg, terminatedAt)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1169,11 +1175,12 @@ type Database_MarkTaskExecFailed_Call struct {
 //   - ctx context.Context
 //   - instanceID string
 //   - errorMsg string
-func (_e *Database_Expecter) MarkTaskExecFailed(ctx interface{}, instanceID interface{}, errorMsg interface{}) *Database_MarkTaskExecFailed_Call {
-	return &Database_MarkTaskExecFailed_Call{Call: _e.mock.On("MarkTaskExecFailed", ctx, instanceID, errorMsg)}
+//   - terminatedAt time.Time
+func (_e *Database_Expecter) MarkTaskExecFailed(ctx interface{}, instanceID interface{}, errorMsg interface{}, terminatedAt interface{}) *Database_MarkTaskExecFailed_Call {
+	return &Database_MarkTaskExecFailed_Call{Call: _e.mock.On("MarkTaskExecFailed", ctx, instanceID, errorMsg, terminatedAt)}
 }
 
-func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, instanceID string, errorMsg string)) *Database_MarkTaskExecFailed_Call {
+func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time)) *Database_MarkTaskExecFailed_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1187,10 +1194,15 @@ func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, in
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -1201,7 +1213,7 @@ func (_c *Database_MarkTaskExecFailed_Call) Return(err error) *Database_MarkTask
 	return _c
 }
 
-func (_c *Database_MarkTaskExecFailed_Call) RunAndReturn(run func(ctx context.Context, instanceID string, errorMsg string) error) *Database_MarkTaskExecFailed_Call {
+func (_c *Database_MarkTaskExecFailed_Call) RunAndReturn(run func(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time) error) *Database_MarkTaskExecFailed_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1264,16 +1276,16 @@ func (_c *Database_MarkTaskExecFinalized_Call) RunAndReturn(run func(ctx context
 }
 
 // MarkTaskExecProcessed provides a mock function for the type Database
-func (_mock *Database) MarkTaskExecProcessed(ctx context.Context, instanceID string) error {
-	ret := _mock.Called(ctx, instanceID)
+func (_mock *Database) MarkTaskExecProcessed(ctx context.Context, instanceID string, terminatedAt time.Time) error {
+	ret := _mock.Called(ctx, instanceID, terminatedAt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for MarkTaskExecProcessed")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = returnFunc(ctx, instanceID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, instanceID, terminatedAt)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1288,11 +1300,12 @@ type Database_MarkTaskExecProcessed_Call struct {
 // MarkTaskExecProcessed is a helper method to define mock.On call
 //   - ctx context.Context
 //   - instanceID string
-func (_e *Database_Expecter) MarkTaskExecProcessed(ctx interface{}, instanceID interface{}) *Database_MarkTaskExecProcessed_Call {
-	return &Database_MarkTaskExecProcessed_Call{Call: _e.mock.On("MarkTaskExecProcessed", ctx, instanceID)}
+//   - terminatedAt time.Time
+func (_e *Database_Expecter) MarkTaskExecProcessed(ctx interface{}, instanceID interface{}, terminatedAt interface{}) *Database_MarkTaskExecProcessed_Call {
+	return &Database_MarkTaskExecProcessed_Call{Call: _e.mock.On("MarkTaskExecProcessed", ctx, instanceID, terminatedAt)}
 }
 
-func (_c *Database_MarkTaskExecProcessed_Call) Run(run func(ctx context.Context, instanceID string)) *Database_MarkTaskExecProcessed_Call {
+func (_c *Database_MarkTaskExecProcessed_Call) Run(run func(ctx context.Context, instanceID string, terminatedAt time.Time)) *Database_MarkTaskExecProcessed_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1302,9 +1315,14 @@ func (_c *Database_MarkTaskExecProcessed_Call) Run(run func(ctx context.Context,
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -1315,7 +1333,7 @@ func (_c *Database_MarkTaskExecProcessed_Call) Return(err error) *Database_MarkT
 	return _c
 }
 
-func (_c *Database_MarkTaskExecProcessed_Call) RunAndReturn(run func(ctx context.Context, instanceID string) error) *Database_MarkTaskExecProcessed_Call {
+func (_c *Database_MarkTaskExecProcessed_Call) RunAndReturn(run func(ctx context.Context, instanceID string, terminatedAt time.Time) error) *Database_MarkTaskExecProcessed_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1544,6 +1562,75 @@ func (_c *Database_MarkTaskTimedOut_Call) Return(err error) *Database_MarkTaskTi
 }
 
 func (_c *Database_MarkTaskTimedOut_Call) RunAndReturn(run func(ctx context.Context, taskID string) error) *Database_MarkTaskTimedOut_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RecordInvalidTaskIPCMessage provides a mock function for the type Database
+func (_mock *Database) RecordInvalidTaskIPCMessage(ctx context.Context, receiver string, rawMessage string, reason string) error {
+	ret := _mock.Called(ctx, receiver, rawMessage, reason)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RecordInvalidTaskIPCMessage")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = returnFunc(ctx, receiver, rawMessage, reason)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_RecordInvalidTaskIPCMessage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RecordInvalidTaskIPCMessage'
+type Database_RecordInvalidTaskIPCMessage_Call struct {
+	*mock.Call
+}
+
+// RecordInvalidTaskIPCMessage is a helper method to define mock.On call
+//   - ctx context.Context
+//   - receiver string
+//   - rawMessage string
+//   - reason string
+func (_e *Database_Expecter) RecordInvalidTaskIPCMessage(ctx interface{}, receiver interface{}, rawMessage interface{}, reason interface{}) *Database_RecordInvalidTaskIPCMessage_Call {
+	return &Database_RecordInvalidTaskIPCMessage_Call{Call: _e.mock.On("RecordInvalidTaskIPCMessage", ctx, receiver, rawMessage, reason)}
+}
+
+func (_c *Database_RecordInvalidTaskIPCMessage_Call) Run(run func(ctx context.Context, receiver string, rawMessage string, reason string)) *Database_RecordInvalidTaskIPCMessage_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_RecordInvalidTaskIPCMessage_Call) Return(err error) *Database_RecordInvalidTaskIPCMessage_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_RecordInvalidTaskIPCMessage_Call) RunAndReturn(run func(ctx context.Context, receiver string, rawMessage string, reason string) error) *Database_RecordInvalidTaskIPCMessage_Call {
 	_c.Call.Return(run)
 	return _c
 }

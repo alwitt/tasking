@@ -11,6 +11,7 @@ import (
 	"github.com/alwitt/tasking/db"
 	"github.com/alwitt/tasking/models"
 	"github.com/apex/log"
+	"github.com/go-playground/validator/v10"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
@@ -855,7 +856,7 @@ func TestTaskExecDefineNewTaskRetryExecInstance(t *testing.T) {
 			if err := dbClient.MarkTaskExecQueued(ctx, failedExec.ID); err != nil {
 				return err
 			}
-			return dbClient.MarkTaskExecFailed(ctx, failedExec.ID, "boom")
+			return dbClient.MarkTaskExecFailed(ctx, failedExec.ID, "boom", time.Now().UTC())
 		},
 	))
 
@@ -976,19 +977,32 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		))
 		assert.Equal(models.TaskExecutionStateProcessing, readExec(id).ExecutionState)
 
+		processedAt := time.Now().UTC().Truncate(time.Millisecond)
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
-				return dbClient.MarkTaskExecProcessed(ctx, id)
+				return dbClient.MarkTaskExecProcessed(ctx, id, processedAt)
 			},
 		))
-		assert.Equal(models.TaskExecutionStateProcessed, readExec(id).ExecutionState)
+		processed := readExec(id)
+		assert.Equal(models.TaskExecutionStateProcessed, processed.ExecutionState)
+		// terminal outcome captured
+		assert.NotNil(processed.TerminalState)
+		assert.Equal(models.TaskExecutionStateProcessed, *processed.TerminalState)
+		assert.NotNil(processed.TerminatedAt)
+		assert.WithinDuration(processedAt, *processed.TerminatedAt, time.Second)
 
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
 				return dbClient.MarkTaskExecFinalized(ctx, id)
 			},
 		))
-		assert.Equal(models.TaskExecutionStateFinalized, readExec(id).ExecutionState)
+		finalized := readExec(id)
+		assert.Equal(models.TaskExecutionStateFinalized, finalized.ExecutionState)
+		// terminal outcome survives finalization (the point of the field: the outcome
+		// is preserved once the state has moved on to FINALIZED)
+		assert.NotNil(finalized.TerminalState)
+		assert.Equal(models.TaskExecutionStateProcessed, *finalized.TerminalState)
+		assert.NotNil(finalized.TerminatedAt)
 	}
 
 	// Case 1: failure path records the error message; FAILED -> FINALIZED
@@ -1000,9 +1014,10 @@ func TestTaskExecStateTransitions(t *testing.T) {
 				return dbClient.MarkTaskExecQueued(ctx, id)
 			},
 		))
+		failedAt := time.Now().UTC().Truncate(time.Millisecond)
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
-				return dbClient.MarkTaskExecFailed(ctx, id, "processing blew up")
+				return dbClient.MarkTaskExecFailed(ctx, id, "processing blew up", failedAt)
 			},
 		))
 		failed := readExec(id)
@@ -1010,6 +1025,11 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		// error message side effect recorded
 		assert.NotNil(failed.ErrorMessage)
 		assert.Equal("processing blew up", *failed.ErrorMessage)
+		// terminal outcome captured
+		assert.NotNil(failed.TerminalState)
+		assert.Equal(models.TaskExecutionStateFailed, *failed.TerminalState)
+		assert.NotNil(failed.TerminatedAt)
+		assert.WithinDuration(failedAt, *failed.TerminatedAt, time.Second)
 
 		// FAILED can be finalized
 		assert.Nil(persistence.UseDatabaseInTransaction(
@@ -1017,16 +1037,21 @@ func TestTaskExecStateTransitions(t *testing.T) {
 				return dbClient.MarkTaskExecFinalized(ctx, id)
 			},
 		))
-		assert.Equal(models.TaskExecutionStateFinalized, readExec(id).ExecutionState)
+		finalized := readExec(id)
+		assert.Equal(models.TaskExecutionStateFinalized, finalized.ExecutionState)
+		// terminal outcome survives finalization
+		assert.NotNil(finalized.TerminalState)
+		assert.Equal(models.TaskExecutionStateFailed, *finalized.TerminalState)
 	}
 
 	// Case 2: cancellation records the cancel message; DEFINED -> CANCELLED
 	{
 		id := defineExec()
 
+		cancelledAt := time.Now().UTC().Truncate(time.Millisecond)
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
-				return dbClient.MarkTaskExecCancelled(ctx, id, "user aborted")
+				return dbClient.MarkTaskExecCancelled(ctx, id, "user aborted", cancelledAt)
 			},
 		))
 		cancelled := readExec(id)
@@ -1034,6 +1059,11 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		// cancel message is stored in the same error_msg column
 		assert.NotNil(cancelled.ErrorMessage)
 		assert.Equal("user aborted", *cancelled.ErrorMessage)
+		// terminal outcome captured
+		assert.NotNil(cancelled.TerminalState)
+		assert.Equal(models.TaskExecutionStateCancelled, *cancelled.TerminalState)
+		assert.NotNil(cancelled.TerminatedAt)
+		assert.WithinDuration(cancelledAt, *cancelled.TerminatedAt, time.Second)
 	}
 
 	// Case 3: illegal transition DEFINED -> PROCESSED is rejected as a consistency error
@@ -1041,14 +1071,17 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		id := defineExec()
 		err := persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
-				return dbClient.MarkTaskExecProcessed(ctx, id)
+				return dbClient.MarkTaskExecProcessed(ctx, id, time.Now().UTC())
 			},
 		)
 		assert.NotNil(err)
 		var consistency goutils.ConsistencyError
 		assert.True(errors.As(err, &consistency), "expected ConsistencyError, got %T", err)
-		// state unchanged
-		assert.Equal(models.TaskExecutionStateDefined, readExec(id).ExecutionState)
+		// state unchanged, and no terminal outcome recorded for a rejected transition
+		rejected := readExec(id)
+		assert.Equal(models.TaskExecutionStateDefined, rejected.ExecutionState)
+		assert.Nil(rejected.TerminalState)
+		assert.Nil(rejected.TerminatedAt)
 	}
 
 	// Case 4: transition on a non-existent exec instance surfaces NotFoundError
@@ -1195,7 +1228,7 @@ func TestTaskExecListAllExecutions(t *testing.T) {
 		if err := dbClient.MarkTaskExecQueued(ctx, failedForRetry.ID); err != nil {
 			return err
 		}
-		return dbClient.MarkTaskExecFailed(ctx, failedForRetry.ID, "boom")
+		return dbClient.MarkTaskExecFailed(ctx, failedForRetry.ID, "boom", time.Now().UTC())
 	})
 
 	var retryInst models.TaskExecution
@@ -1349,4 +1382,74 @@ func TestTaskExecListAllExecutions(t *testing.T) {
 		assert.Len(got, 1)
 		assert.Equal(immAcquired.ID, got[0].ID)
 	}
+}
+
+func TestAuditRecordInvalidTaskIPCMessage(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+	testDB := fmt.Sprintf("/tmp/tasking_ut_%s.db", ulid.Make().String())
+	log.WithField("db", testDB).Debug("Test database")
+
+	persistence := getUnitTestPersistence(utCtx, t, testDB)
+
+	// validator for exercising ParseMetadata round-trip
+	validate := validator.New()
+	assert.Nil(models.RegisterWithValidator(validate))
+
+	// Case 0: record an invalid message with a readable raw payload
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			return dbClient.RecordInvalidTaskIPCMessage(
+				ctx, "scheduler", "{bad json", "unparsable message",
+			)
+		},
+	))
+
+	// Case 1: record an invalid message with no readable payload
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			return dbClient.RecordInvalidTaskIPCMessage(
+				ctx, "unit-test-worker", "", "unreadable payload",
+			)
+		},
+	))
+
+	// List back only the invalid-task-IPC-message events
+	var events []models.SystemEventAudit
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			var err error
+			events, err = dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{
+				EventTypes: []models.SystemEventTypeENUM{
+					models.SystemEventTypeInvalidTaskIPCMessage,
+				},
+			})
+			return err
+		},
+	))
+	assert.Len(events, 2)
+
+	// Both events must parse to the invalid-message payload and round-trip the fields.
+	// ListSystemEvents orders by created_at, so index 0 is the first recorded.
+	for _, event := range events {
+		assert.Equal(models.SystemEventTypeInvalidTaskIPCMessage, event.EventType)
+	}
+
+	parsed0, err := events[0].ParseMetadata(validate)
+	assert.Nil(err)
+	meta0, ok := parsed0.(models.SystemEventInvalidTaskIPCMessage)
+	assert.True(ok)
+	assert.Equal("scheduler", meta0.Receiver)
+	assert.Equal("{bad json", meta0.RawMessage)
+	assert.Equal("unparsable message", meta0.Reason)
+
+	parsed1, err := events[1].ParseMetadata(validate)
+	assert.Nil(err)
+	meta1, ok := parsed1.(models.SystemEventInvalidTaskIPCMessage)
+	assert.True(ok)
+	assert.Equal("unit-test-worker", meta1.Receiver)
+	assert.Equal("", meta1.RawMessage)
+	assert.Equal("unreadable payload", meta1.Reason)
 }

@@ -120,6 +120,20 @@ func NewTaskSchedulerError(message string, core error, getCallStack bool) TaskSc
 	return TaskSchedulerError{BaseError: base}
 }
 
+// TaskMaintenanceError error encountered during the scheduler's periodic maintenance
+// sweep (performMaintenance). Used only by performMaintenance to wrap failures of the
+// list-scan transactions and of the per-item handler calls it drives.
+type TaskMaintenanceError struct{ goutils.BaseError }
+
+// NewTaskMaintenanceError builds a TaskMaintenanceError, optionally capturing the call stack.
+func NewTaskMaintenanceError(message string, core error, getCallStack bool) TaskMaintenanceError {
+	base := goutils.BaseError{Name: "TaskMaintenanceError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return TaskMaintenanceError{BaseError: base}
+}
+
 // TaskClientError error operating the task client: the public task-submission API
 // the rest of the system uses to enqueue work with the scheduler. Distinct from
 // the task engine's internal component errors. Wraps the underlying cause (e.g.

@@ -48,6 +48,30 @@ func (c *databaseImpl) defineNewSystemEvent(
 }
 
 /*
+RecordInvalidTaskIPCMessage record an audit event for a task IPC message that could not be
+processed (unreadable, unparsable, or of an unsupported/unknown type).
+
+	@param ctx context.Context - execution context
+	@param receiver string - name of the IPC receiver that rejected the message
+	@param rawMessage string - the raw message payload, if it was readable
+	@param reason string - human-readable reason the message was rejected
+*/
+func (c *databaseImpl) RecordInvalidTaskIPCMessage(
+	ctx context.Context, receiver, rawMessage, reason string,
+) error {
+	if _, err := c.defineNewSystemEvent(
+		ctx,
+		models.SystemEventTypeInvalidTaskIPCMessage,
+		&models.SystemEventInvalidTaskIPCMessage{
+			Receiver: receiver, RawMessage: rawMessage, Reason: reason,
+		},
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+/*
 ListSystemEvents list captured system events
 
 	@param ctx context.Context - execution context
@@ -57,6 +81,10 @@ ListSystemEvents list captured system events
 func (c *databaseImpl) ListSystemEvents(
 	_ context.Context, filters SystemEventQueryFilter,
 ) ([]models.SystemEventAudit, error) {
+	if err := c.validator.Struct(&filters); err != nil {
+		return nil, goutils.NewValidationError("system event query filter is not valid", err, true)
+	}
+
 	query := c.db.Model(&systemEventAuditEntry{})
 
 	if len(filters.EventTypes) > 0 {
