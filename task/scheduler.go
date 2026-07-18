@@ -57,15 +57,15 @@ type schedulerImpl struct {
 // NewSchedulerParams init parameters for a task scheduler
 type NewSchedulerParams struct {
 	// Persistence persistence client
-	Persistence db.Client
+	Persistence db.Client `validate:"required"`
 	// Config task scheduler config
-	Config models.TaskSchedulerConfig
+	Config models.TaskSchedulerConfig `validate:"required"`
 	// Redis REDIS client
-	Redis goutilsRedis.Client
+	Redis goutilsRedis.Client `validate:"required"`
 	// IPCReceiverFactory factory function to define Redis based IPC message receivers
-	IPCReceiverFactory IPCMsgReceiverFactoryCB
+	IPCReceiverFactory IPCMsgReceiverFactoryCB `validate:"required"`
 	// IPCSenderFactory factory function to define Redis based IPC message senders
-	IPCSenderFactory IPCMsgSenderFactoryCB
+	IPCSenderFactory IPCMsgSenderFactoryCB `validate:"required"`
 }
 
 /*
@@ -81,6 +81,17 @@ func NewScheduler(
 ) (Scheduler, error) {
 	logTags := log.Fields{"package": "tasking", "module": "task", "component": "scheduler"}
 
+	validate := validator.New()
+	if err := models.RegisterWithValidator(validate); err != nil {
+		return nil, goutils.NewRuntimeError(
+			"failed to install custom validation macros", err, true,
+		)
+	}
+
+	if err := validate.Struct(&params); err != nil {
+		return nil, goutils.NewBadInputError("scheduler param is invalid", err, true)
+	}
+
 	instance := &schedulerImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
@@ -88,7 +99,7 @@ func NewScheduler(
 				goutils.ModifyLogMetadataByRestRequestParam,
 			},
 		},
-		validator:      validator.New(),
+		validator:      validate,
 		config:         params.Config,
 		wg:             &sync.WaitGroup{},
 		persistence:    params.Persistence,
@@ -96,11 +107,6 @@ func NewScheduler(
 		taskIPcSenders: map[string]common.IPCMessageSend{},
 	}
 	instance.workerCtx, instance.workerCtxCancel = context.WithCancel(parentCtx)
-	if err := models.RegisterWithValidator(instance.validator); err != nil {
-		return nil, goutils.NewRuntimeError(
-			"failed to install custom validation macros", err, true,
-		)
-	}
 
 	// ------------------------------------------------------------------------------------
 	// Prepare IPC message processing worker

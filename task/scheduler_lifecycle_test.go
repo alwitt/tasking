@@ -1,0 +1,200 @@
+package task
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+	"time"
+
+	mockgoutils "github.com/alwitt/goutils/mocks/goutils"
+	goutilsRedis "github.com/alwitt/goutils/redis"
+	mockcommon "github.com/alwitt/tasking/mocks/common"
+	mockdb "github.com/alwitt/tasking/mocks/db"
+	"github.com/alwitt/tasking/models"
+	"github.com/apex/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+)
+
+// lifecycleTestScheduler bundles the scheduler under test with the mocks Start/Stop drive.
+type lifecycleTestScheduler struct {
+	scheduler   *schedulerImpl
+	ipcReceiver *mockcommon.IPCMessageReceive
+	worker      *mockgoutils.TaskProcessor
+	timer       *mockgoutils.IntervalTimer
+}
+
+// newLifecycleTestScheduler build a white-box schedulerImpl wired for Start/Stop: a real
+// cancelable worker context (Stop cancels it, which is how processQueue is told to exit),
+// plus mock worker, mock interval timer, and mock queue receiver.
+func newLifecycleTestScheduler(t *testing.T) lifecycleTestScheduler {
+	mockClient := mockdb.NewClient(t)
+	ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+	worker := mockgoutils.NewTaskProcessor(t)
+	timer := mockgoutils.NewIntervalTimer(t)
+
+	s := newProcessTestScheduler(mockClient, nil)
+	s.config = models.TaskSchedulerConfig{MaintenanceTimerIntSecs: 10}
+	s.ipcReceiver = ipcReceiver
+	s.worker = worker
+	s.maintenanceTimer = timer
+	s.workerCtx, s.workerCtxCancel = context.WithCancel(context.Background())
+
+	return lifecycleTestScheduler{
+		scheduler: s, ipcReceiver: ipcReceiver, worker: worker, timer: timer,
+	}
+}
+
+// TestSchedulerStartStop exercises the full lifecycle: Start recovers the buffer, starts
+// the worker + maintenance timer, and launches the processQueue goroutine; Stop cancels
+// the worker context (unblocking processQueue), stops the timer and worker, and waits for
+// the goroutine to finish. Stop is asserted in the same test so the launched goroutine is
+// always torn down.
+func TestSchedulerStartStop(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	simErr := fmt.Errorf("simulated failure")
+
+	t.Run("happy path: start launches the loop, stop tears it down", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newLifecycleTestScheduler(t)
+
+		// Start: empty buffer recovery, worker start, timer start.
+		h.ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
+		h.timer.EXPECT().
+			Start(h.scheduler.config.MaintenanceTimerInt(), mock.Anything, false).
+			Return(nil).
+			Once()
+
+		// The processQueue goroutine blocks in DequeueMessage until Stop cancels the
+		// worker context; on cancellation it returns (nil, nil), which processQueue
+		// treats as a no-op, loops, sees the cancelled context, and exits cleanly.
+		// entered is closed once the goroutine reaches the blocking read, so the test
+		// can wait for the loop to actually be running before calling Stop (deterministic,
+		// and proves processQueue ran rather than being torn down before its first read).
+		entered := make(chan struct{})
+		h.ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			RunAndReturn(func(
+				ctx context.Context, _ bool, _ *time.Duration,
+			) (goutilsRedis.QueueMessageEnvelope, error) {
+				close(entered)
+				<-ctx.Done()
+				return nil, nil
+			}).
+			Once()
+
+		assert.Nil(h.scheduler.Start(context.Background()))
+
+		// Wait until the goroutine is blocked in the read before tearing it down.
+		<-entered
+
+		// Stop: cancels the worker context, stops timer + worker, waits for the goroutine.
+		h.timer.EXPECT().Stop().Return(nil).Once()
+		h.worker.EXPECT().StopEventLoop().Return(nil).Once()
+
+		assert.Nil(h.scheduler.Stop(context.Background()))
+	})
+
+	t.Run("buffer recovery failure aborts start", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newLifecycleTestScheduler(t)
+
+		// Recovery reads the buffer first; a read error is fatal to Start, so neither the
+		// worker nor the timer is started and no goroutine is launched.
+		h.ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, simErr).
+			Once()
+
+		err := h.scheduler.Start(context.Background())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("worker start failure aborts start", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newLifecycleTestScheduler(t)
+
+		h.ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		// Worker fails to start: Start aborts before the timer or the goroutine.
+		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(simErr).Once()
+
+		err := h.scheduler.Start(context.Background())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("maintenance timer start failure aborts start", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newLifecycleTestScheduler(t)
+
+		h.ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
+		// Timer fails to start: Start aborts before launching the processQueue goroutine,
+		// so DequeueMessage is never called.
+		h.timer.EXPECT().
+			Start(h.scheduler.config.MaintenanceTimerInt(), mock.Anything, false).
+			Return(simErr).
+			Once()
+
+		err := h.scheduler.Start(context.Background())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("stop tolerates timer and worker stop failures", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newLifecycleTestScheduler(t)
+
+		h.ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
+		h.timer.EXPECT().
+			Start(h.scheduler.config.MaintenanceTimerInt(), mock.Anything, false).
+			Return(nil).
+			Once()
+		entered := make(chan struct{})
+		h.ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			RunAndReturn(func(
+				ctx context.Context, _ bool, _ *time.Duration,
+			) (goutilsRedis.QueueMessageEnvelope, error) {
+				close(entered)
+				<-ctx.Done()
+				return nil, nil
+			}).
+			Once()
+
+		assert.Nil(h.scheduler.Start(context.Background()))
+		<-entered
+
+		// Both stop calls fail: Stop logs them but still cancels the context and waits for
+		// the goroutine, so it returns nil once the goroutine has drained.
+		h.timer.EXPECT().Stop().Return(simErr).Once()
+		h.worker.EXPECT().StopEventLoop().Return(simErr).Once()
+
+		assert.Nil(h.scheduler.Stop(context.Background()))
+	})
+}
