@@ -112,6 +112,18 @@ type Database interface {
 	*/
 	RecordInvalidTaskIPCMessage(ctx context.Context, receiver, rawMessage, reason string) error
 
+	/*
+		RecordTaskEngineFailure record an audit event for a task whose execution instance the
+		core task engine failed to operate on (e.g. the receiver could not claim it, or could
+		not submit it to the executor).
+
+			@param ctx context.Context - execution context
+			@param taskID string - ID of the task that was failed
+			@param instanceID string - ID of the execution instance the engine failed to operate on
+			@param reason string - human-readable reason the engine reported the failure
+	*/
+	RecordTaskEngineFailure(ctx context.Context, taskID, instanceID, reason string) error
+
 	// ------------------------------------------------------------------------------------
 	// Task
 

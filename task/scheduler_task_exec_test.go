@@ -946,3 +946,197 @@ func TestProcessTaskExecutionTimedOut(t *testing.T) {
 		assert.Nil(err)
 	})
 }
+
+// TestProcessTaskExecutionEngineFailed covers the engine-failure handler: the two fetch
+// failures, the at-or-past-FINALIZED idempotency guard, and the finalize -> fail task ->
+// record audit event path with each of its failure branches. Unlike the execution-failure
+// handler, an engine failure is terminal (no retry): the task is always marked failed.
+func TestProcessTaskExecutionEngineFailed(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+	simErr := fmt.Errorf("simulated failure")
+
+	// expectFetch wires GetTaskExecution + GetTask for a successful fetch of the instance
+	// and its parent task.
+	expectFetch := func(
+		mockDatabase *mockdb.Database, instance models.TaskExecution, task models.Task,
+	) {
+		mockDatabase.EXPECT().GetTaskExecution(mock.Anything, instance.ID).Return(instance, nil)
+		mockDatabase.EXPECT().GetTask(mock.Anything, instance.TaskID).Return(task, nil)
+	}
+
+	// engineFailedInstance an instance the receiver already marked FAILED before reporting
+	// the engine failure (upstream of FINALIZED, so the idempotency guard does not fire).
+	engineFailedInstance := func(task models.Task) models.TaskExecution {
+		instance := execInstanceFixture(task, models.TaskExecutionClassImmediate)
+		instance.ExecutionState = models.TaskExecutionStateFailed
+		return instance
+	}
+
+	t.Run("fetch execution instance fails", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		instanceID := ulid.Make().String()
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetTaskExecution(mock.Anything, instanceID).
+			Return(models.TaskExecution{}, simErr)
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instanceID, time.Now().UTC())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("fetch parent task fails", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().GetTaskExecution(mock.Anything, instance.ID).Return(instance, nil)
+		mockDatabase.EXPECT().GetTask(mock.Anything, instance.TaskID).Return(models.Task{}, simErr)
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("instance already at or past FINALIZED is a no-op", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+		// Already FINALIZED: a prior delivery (or the maintenance backstop) handled it.
+		instance.ExecutionState = models.TaskExecutionStateFinalized
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		// No MarkTaskExecFinalized / MarkTaskFailed / RecordTaskEngineFailure: the guard
+		// returns before any mutation.
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.Nil(err)
+	})
+
+	t.Run("mark instance finalized fails", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(simErr)
+		// No MarkTaskFailed / RecordTaskEngineFailure: aborts on the finalize failure.
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("mark task failed fails", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
+		mockDatabase.EXPECT().MarkTaskFailed(mock.Anything, task.ID).Return(simErr)
+		// No RecordTaskEngineFailure: aborts on the mark-failed failure.
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("record audit event fails", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
+		mockDatabase.EXPECT().MarkTaskFailed(mock.Anything, task.ID).Return(nil)
+		// The audit write is inside the transaction, so its failure propagates and rolls
+		// back the finalize + fail: the whole handler returns an error.
+		mockDatabase.EXPECT().
+			RecordTaskEngineFailure(mock.Anything, task.ID, instance.ID, mock.Anything).
+			Return(simErr)
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.NotNil(err)
+		var schedErr models.TaskSchedulerError
+		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
+	})
+
+	t.Run("happy path finalizes, fails the task, and records the audit event", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		task := pendingTaskFixture("unit-test-task")
+		instance := engineFailedInstance(task)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
+		mockDatabase.EXPECT().MarkTaskFailed(mock.Anything, task.ID).Return(nil)
+		mockDatabase.EXPECT().
+			RecordTaskEngineFailure(mock.Anything, task.ID, instance.ID, mock.Anything).
+			Return(nil)
+
+		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.Nil(err)
+	})
+}

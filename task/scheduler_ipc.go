@@ -165,7 +165,9 @@ func (s *schedulerImpl) recoverBufferedMessages(ctx context.Context) error {
 			}
 		case models.IPCMessageExecuteInstance:
 			switch typed.Type {
-			case models.IPCMsgTypeExecuteSucceeded, models.IPCMsgTypeExecuteFailed:
+			case models.IPCMsgTypeExecuteSucceeded,
+				models.IPCMsgTypeExecuteFailed,
+				models.IPCMsgTypeEngineFailed:
 				// valid - fall through to re-enqueue below
 			default:
 				s.recordInvalidMessage(
@@ -296,6 +298,16 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			}); err != nil {
 				return models.NewTaskSchedulerError(
 					"failed to submit process failed execution request", err, true,
+				)
+			}
+
+		case models.IPCMsgTypeEngineFailed:
+			// Core task engine failed to operate on the execution instance
+			if err := s.worker.Submit(ctx, schedulerWorkReqTaskExecutionEngineFailed{
+				InstanceID: typed.InstanceID, Timestamp: typed.Timestamp,
+			}); err != nil {
+				return models.NewTaskSchedulerError(
+					"failed to submit process engine failure request", err, true,
 				)
 			}
 

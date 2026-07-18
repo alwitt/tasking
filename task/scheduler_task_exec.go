@@ -281,6 +281,97 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 	return nil
 }
 
+// schedulerWorkReqTaskExecutionEngineFailed [worker request] the core task engine failed to
+// operate on an execution instance (e.g. the receiver could not claim it, or could not submit
+// it to the executor)
+type schedulerWorkReqTaskExecutionEngineFailed struct {
+	InstanceID string
+	Timestamp  time.Time
+}
+
+/*
+processTaskExecutionEngineFailed process an engine-level failure on a task execution instance.
+
+Unlike processTaskExecutionFailed, an engine-level failure (the receiver could not claim the
+instance, or could not submit it to the executor) is not retried: the instance is finalized
+and the parent task is marked failed. An audit event recording the engine failure is written
+in the same transaction so it commits atomically with the state changes. The receiver has
+already marked the instance FAILED before sending this, so this handler finalizes it.
+
+	@param ctx context.Context - execution context
+	@param instanceID string - the execution instance ID
+	@param timestamp time.Time - timestamp when the engine failure was reported
+*/
+func (s *schedulerImpl) processTaskExecutionEngineFailed(
+	ctx context.Context, instanceID string, _ time.Time,
+) error {
+	if dbErr := s.persistence.UseDatabaseInTransaction(
+		ctx, func(dbCtx context.Context, dbClient db.Database) error {
+			execInstanceEntry, taskEntry, err := s.fetchExecInstanceAndParentTask(
+				dbCtx, dbClient, instanceID,
+			)
+			if err != nil {
+				return err
+			}
+
+			// Idempotency guard: this handler finalizes the instance and fails the task. If the
+			// instance is already at or past FINALIZED, a prior delivery (or the maintenance
+			// backstop racing this message) already handled it - treat this as a no-op. A state
+			// upstream of FINALIZED falls through to MarkTaskExecFinalized, whose ValidNextState
+			// check surfaces any genuine ordering violation.
+			if execInstanceEntry.IsStateAtOrPast(models.TaskExecutionStateFinalized) {
+				log.
+					WithFields(goutils.UpdateCodePositionInTags(s.GetLogTagsForContext(dbCtx))).
+					Warnf(
+						"Ignoring engine failure of execution instance %s already in state '%s'",
+						execInstanceEntry.ID, execInstanceEntry.ExecutionState,
+					)
+				return nil
+			}
+
+			if err = dbClient.MarkTaskExecFinalized(dbCtx, execInstanceEntry.ID); err != nil {
+				return models.NewPersistenceError(
+					fmt.Sprintf(
+						"failed to mark task execution instance %s finalized", execInstanceEntry.ID,
+					), err, true,
+				)
+			}
+
+			// An engine-level failure is terminal for the task - no retry.
+			if err = dbClient.MarkTaskFailed(dbCtx, taskEntry.ID); err != nil {
+				return models.NewPersistenceError(
+					fmt.Sprintf("failed to mark task %s failed", taskEntry.ID), err, true,
+				)
+			}
+
+			// Record the engine failure as an audit event. This commits atomically with the
+			// state changes above, so a task marked failed for this reason always has its
+			// matching audit entry.
+			if err = dbClient.RecordTaskEngineFailure(
+				dbCtx, taskEntry.ID, execInstanceEntry.ID,
+				fmt.Sprintf(
+					"task engine failed to operate on execution instance %s", execInstanceEntry.ID,
+				),
+			); err != nil {
+				return models.NewPersistenceError(
+					fmt.Sprintf(
+						"failed to record engine failure audit event for task %s", taskEntry.ID,
+					), err, true,
+				)
+			}
+
+			return nil
+		},
+	); dbErr != nil {
+		return models.NewTaskSchedulerError(
+			fmt.Sprintf(
+				"failed to process engine failure of execution instance %s", instanceID,
+			), dbErr, true,
+		)
+	}
+	return nil
+}
+
 // schedulerWorkReqTaskExecutionTimedOut [worker request] task execution instance timed out
 type schedulerWorkReqTaskExecutionTimedOut struct {
 	InstanceID string

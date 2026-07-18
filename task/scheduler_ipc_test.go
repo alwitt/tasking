@@ -315,6 +315,35 @@ func TestRecoverBufferedMessages(t *testing.T) {
 		assert.Nil(s.recoverBufferedMessages(utCtx))
 	})
 
+	t.Run("engine-failed message is re-enqueued onto the main queue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newRecoverTestScheduler(t, mockClient, ipcReceiver)
+
+		// An engine-failure report is an IPCMessageExecuteInstance. Before support was
+		// added it fell into the unsupported-type branch and was recorded-and-skipped;
+		// now it is a valid replayable message that must go back onto the main queue.
+		engineFailed := models.PrepareIPCMsgTaskExecutionEngineFailed(
+			"unit-test", ulid.Make().String(), time.Now().UTC(),
+		)
+
+		ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(engineFailed, nil).
+			Once()
+		ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		// Re-enqueued (not recorded as invalid): a strict RecordInvalidTaskIPCMessage
+		// expectation is deliberately absent, so treating it as poison would fail the mock.
+		ipcReceiver.EXPECT().ReEnqueueOnMainQueue(mock.Anything, engineFailed).Return(nil).Once()
+
+		assert.Nil(s.recoverBufferedMessages(utCtx))
+	})
+
 	t.Run("re-enqueue error is fatal", func(t *testing.T) {
 		assert := assert.New(t)
 
@@ -615,6 +644,31 @@ func TestProcessOneIPCRequest(t *testing.T) {
 			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
 				failed, ok := req.(schedulerWorkReqTaskExecutionFailed)
 				return ok && failed.InstanceID == instanceID
+			})).
+			Return(nil)
+		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("engine-failed message is submitted then deleted", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newIPCRequestTestScheduler(t)
+		instanceID := ulid.Make().String()
+		msg := models.PrepareIPCMsgTaskExecutionEngineFailed(
+			"unit-test", instanceID, time.Now().UTC(),
+		)
+
+		h.ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// An engine-failure report is submitted as an engine-failed work request. Before
+		// support was added it fell into the unsupported-type branch and was dropped.
+		h.worker.EXPECT().
+			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
+				engineFailed, ok := req.(schedulerWorkReqTaskExecutionEngineFailed)
+				return ok && engineFailed.InstanceID == instanceID
 			})).
 			Return(nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)

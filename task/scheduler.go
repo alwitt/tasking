@@ -262,6 +262,29 @@ func NewScheduler(
 		)
 	}
 
+	// task execution engine failure
+	if err := instance.worker.AddToTaskExecutionMap(
+		reflect.TypeOf(schedulerWorkReqTaskExecutionEngineFailed{}),
+		func(taskParam interface{}) error {
+			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionEngineFailed)
+			if ok {
+				return instance.processTaskExecutionEngineFailed(
+					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
+				)
+			}
+			return goutils.NewConsistencyError(fmt.Sprintf(
+				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
+			), nil, true)
+		},
+	); err != nil {
+		return nil, models.NewTaskSchedulerError(
+			fmt.Sprintf(
+				"failed to register '%s' handler with worker",
+				reflect.TypeOf(schedulerWorkReqTaskExecutionEngineFailed{}),
+			), err, true,
+		)
+	}
+
 	// task execution timed out
 	if err := instance.worker.AddToTaskExecutionMap(
 		reflect.TypeOf(schedulerWorkReqTaskExecutionTimedOut{}),

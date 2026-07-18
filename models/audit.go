@@ -30,6 +30,10 @@ const (
 	SystemEventTypeDeleteTask SystemEventTypeENUM = "DELETE_TASK"
 	// SystemEventTypeInvalidTaskIPCMessage a task IPC message could not be processed
 	SystemEventTypeInvalidTaskIPCMessage SystemEventTypeENUM = "INVALID_TASK_IPC_MESSAGE"
+	// SystemEventTypeEngineFailedTask the core task engine failed to operate on one of a
+	// task's execution instances (e.g. the receiver could not claim it, or could not submit
+	// it to the executor); distinct from a failure during actual task execution
+	SystemEventTypeEngineFailedTask SystemEventTypeENUM = "ENGINE_FAILED_TASK"
 )
 
 // Values all valid SystemEventTypeENUM values
@@ -42,6 +46,7 @@ func (SystemEventTypeENUM) Values() []SystemEventTypeENUM {
 		SystemEventTypeTimedOutTask,
 		SystemEventTypeDeleteTask,
 		SystemEventTypeInvalidTaskIPCMessage,
+		SystemEventTypeEngineFailedTask,
 	}
 }
 
@@ -96,6 +101,14 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 			)
 		}
 		return parsed, validate(&parsed)
+	case SystemEventTypeEngineFailedTask:
+		var parsed SystemEventEngineFailedTask
+		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
 	default:
 		return nil, goutils.NewConsistencyError(
 			fmt.Sprintf("unsupported system event type '%s'", a.EventType), nil, true,
@@ -107,6 +120,19 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 type SystemEventTaskEvents struct {
 	// TaskID task ID
 	TaskID string `json:"task_id" validate:"required"`
+}
+
+// SystemEventEngineFailedTask records a task whose execution instance the core task engine
+// failed to operate on (e.g. the receiver could not claim the instance, or could not submit
+// it to the executor). This is an engine-level failure, distinct from a failure during actual
+// task execution. The parent application is responsible for reviewing these.
+type SystemEventEngineFailedTask struct {
+	// TaskID ID of the task that was failed
+	TaskID string `json:"task_id" validate:"required"`
+	// InstanceID ID of the execution instance the engine failed to operate on
+	InstanceID string `json:"instance_id" validate:"required"`
+	// Reason human-readable reason the engine reported the failure
+	Reason string `json:"reason"`
 }
 
 // SystemEventInvalidTaskIPCMessage records a task IPC message an IPC receiver got but could
