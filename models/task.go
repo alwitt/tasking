@@ -178,6 +178,11 @@ type Task struct {
 	// for this task name
 	TaskName string `json:"name" gorm:"column:name;not null" validate:"required"`
 
+	// Creator opaque identity of the entity that created this task. Set by the
+	// submitting Client. tasking never interprets it; multi-tenancy/isolation is
+	// the embedding application's responsibility.
+	Creator string `json:"creator" gorm:"column:creator;index" validate:"required"`
+
 	// TaskScheduleClass execution scheduling class of the task
 	TaskScheduleClass TaskScheduleClassENUM `json:"schedule_class" gorm:"column:schedule_class;not null" validate:"required,task_schedule_class"`
 

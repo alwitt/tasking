@@ -69,6 +69,8 @@ type TaskExecutionQueryFilter struct {
 type NewTaskParameter struct {
 	// Name task name, used to indicate which execution processor should pick up the work
 	Name string
+	// Creator opaque identity of the entity creating the task
+	Creator string
 	// Parameters task processing parameters
 	Parameters interface{}
 	// Metadata associated metadata

@@ -11,7 +11,27 @@ import (
 	"github.com/alwitt/tasking/db"
 	"github.com/alwitt/tasking/models"
 	"github.com/apex/log"
+	"github.com/go-playground/validator/v10"
 )
+
+// DefineTaskParams the per-task parameters shared by the task submission entry points. It
+// carries everything needed to define a task except the execution context, the active DB
+// transaction, and (for scheduled tasks) the target runtime, which are passed separately so
+// this struct stays reusable across the immediate and scheduled variants.
+type DefineTaskParams struct {
+	// Name the task name. This is used to match the task with the appropriate task execution
+	// processor to run the task.
+	Name string `validate:"required"`
+	// Parameters task processing parameters
+	Parameters any
+	// Metadata associated metadata
+	Metadata any
+	// Creator optional per-task creator override; nil uses the client's DefaultCreator. The
+	// resolved value must be non-empty or the submit fails validation.
+	Creator *string
+	// Deadline if specified, the task must complete by this dead line.
+	Deadline *time.Time
+}
 
 // Client task engine client
 type Client interface {
@@ -26,20 +46,13 @@ type Client interface {
 		scheduler.
 
 			@param ctx context.Context - execution context
-			@param name string - the task name. This is used to match the task with the appropriate
-			    task execution processor to run the task.
-			@param parameters any - task processing parameters
-			@param metadata any - associated metadata
-			@param deadline *time.Time - if specified, the task must complete by this dead line.
+			@param params DefineTaskParams - the task definition parameters
 			@param activeDBClient db.Database - an existing open data base transaction to continue in
 			@return the newly defined task entry
 	*/
 	DefineAndRunImmediateOneShotTask(
 		ctx context.Context,
-		name string,
-		parameters any,
-		metadata any,
-		deadline *time.Time,
+		params DefineTaskParams,
 		activeDBClient db.Database,
 	) (models.Task, error)
 
@@ -54,22 +67,15 @@ type Client interface {
 		scheduler.
 
 			@param ctx context.Context - execution context
-			@param name string - the task name. This is used to match the task with the appropriate
-			    task execution processor to run the task.
-			@param parameters any - task processing parameters
-			@param metadata any - associated metadata
+			@param params DefineTaskParams - the task definition parameters
 			@param targetRuntime time.Time - target time when the task should run
-			@param deadline *time.Time - if specified, the task must complete by this dead line.
 			@param activeDBClient db.Database - an existing open data base transaction to continue in
 			@return the newly defined task entry
 	*/
 	DefineAndRunScheduledOneShotTask(
 		ctx context.Context,
-		name string,
-		parameters any,
-		metadata any,
+		params DefineTaskParams,
 		targetRuntime time.Time,
-		deadline *time.Time,
 		activeDBClient db.Database,
 	) (models.Task, error)
 
@@ -92,8 +98,11 @@ type Client interface {
 // clientImpl implements Client
 type clientImpl struct {
 	goutils.Component
+	validator *validator.Validate
 
 	config models.TaskClientConfig
+
+	defaultCreator string
 
 	retryForTaskName map[string]models.RetryParam
 
@@ -109,6 +118,10 @@ type clientImpl struct {
 type NewClientParams struct {
 	// Name of the client
 	Name string `validate:"required"`
+	// DefaultCreator opaque creator identity stamped on tasks submitted through this
+	// client when the submit call does not provide a per-task override. tasking never
+	// interprets it; it is the notification routing key (see notify/DESIGN.md).
+	DefaultCreator string
 	// Persistence persistence client
 	Persistence db.Client `validate:"required"`
 	// Config task client config
@@ -133,6 +146,16 @@ func NewClient(
 		"package": "tasking", "module": "task", "component": "client", "instance": params.Name,
 	}
 
+	validate := validator.New()
+	if err := models.RegisterWithValidator(validate); err != nil {
+		return nil, goutils.NewRuntimeError(
+			"failed to install custom validation macros", err, true,
+		)
+	}
+	if err := validate.Struct(&params); err != nil {
+		return nil, goutils.NewBadInputError("client param is invalid", err, true)
+	}
+
 	instance := &clientImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
@@ -140,7 +163,9 @@ func NewClient(
 				goutils.ModifyLogMetadataByRestRequestParam,
 			},
 		},
+		validator:        validate,
 		config:           params.Config,
+		defaultCreator:   params.DefaultCreator,
 		retryForTaskName: make(map[string]models.RetryParam),
 		persistence:      params.Persistence,
 		workerCtx:        parentCtx,
@@ -185,33 +210,31 @@ transaction. On error, inspect the returned error with `errors.As`:
     the scheduler.
 
     @param ctx context.Context - execution context
-    @param name string - the task name. This is used to match the task with the appropriate
-    task execution processor to run the task.
-    @param parameters any - task processing parameters
-    @param metadata any - associated metadata
-    @param deadline *time.Time - if specified, the task must complete by this dead line.
+    @param params DefineTaskParams - the task definition parameters
     @param activeDBClient db.Database - an existing open data base transaction to continue in
     @return the newly defined task entry
 */
 func (c *clientImpl) DefineAndRunImmediateOneShotTask(
 	ctx context.Context,
-	name string,
-	parameters any,
-	metadata any,
-	deadline *time.Time,
+	params DefineTaskParams,
 	activeDBClient db.Database,
 ) (models.Task, error) {
+	if err := c.validator.Struct(&params); err != nil {
+		return models.Task{}, goutils.NewBadInputError("task definition param is invalid", err, true)
+	}
+
 	return c.defineAndRunOneShotTask(
-		ctx, name, activeDBClient,
+		ctx, params.Name, activeDBClient,
 		func(
 			dbCtx context.Context, dbClient db.Database, retry models.TaskRetryParameters,
 		) (models.Task, error) {
 			return dbClient.DefineNewOneShotTask(dbCtx, db.NewTaskParameter{
-				Name:       name,
-				Parameters: parameters,
-				Metadata:   metadata,
+				Name:       params.Name,
+				Creator:    c.resolveCreator(params.Creator),
+				Parameters: params.Parameters,
+				Metadata:   params.Metadata,
 				RetryParam: retry,
-				Deadline:   deadline,
+				Deadline:   params.Deadline,
 			})
 		},
 	)
@@ -230,44 +253,52 @@ transaction. On error, inspect the returned error with `errors.As`:
     the scheduler.
 
     @param ctx context.Context - execution context
-    @param name string - the task name. This is used to match the task with the appropriate
-    task execution processor to run the task.
-    @param parameters any - task processing parameters
-    @param metadata any - associated metadata
+    @param params DefineTaskParams - the task definition parameters
     @param targetRuntime time.Time - target time when the task should run
-    @param deadline *time.Time - if specified, the task must complete by this dead line.
     @param activeDBClient db.Database - an existing open data base transaction to continue in
     @return the newly defined task entry
 */
 func (c *clientImpl) DefineAndRunScheduledOneShotTask(
 	ctx context.Context,
-	name string,
-	parameters any,
-	metadata any,
+	params DefineTaskParams,
 	targetRuntime time.Time,
-	deadline *time.Time,
 	activeDBClient db.Database,
 ) (models.Task, error) {
-	if deadline != nil && targetRuntime.After(*deadline) {
+	if err := c.validator.Struct(&params); err != nil {
+		return models.Task{}, goutils.NewBadInputError("task definition param is invalid", err, true)
+	}
+
+	if params.Deadline != nil && targetRuntime.After(*params.Deadline) {
 		return models.Task{}, goutils.NewBadInputError(
 			"task deadline must come after target runtime", nil, true,
 		)
 	}
 
 	return c.defineAndRunOneShotTask(
-		ctx, name, activeDBClient,
+		ctx, params.Name, activeDBClient,
 		func(
 			dbCtx context.Context, dbClient db.Database, retry models.TaskRetryParameters,
 		) (models.Task, error) {
 			return dbClient.DefineNewScheduledOneShotTask(dbCtx, db.NewTaskParameter{
-				Name:       name,
-				Parameters: parameters,
-				Metadata:   metadata,
+				Name:       params.Name,
+				Creator:    c.resolveCreator(params.Creator),
+				Parameters: params.Parameters,
+				Metadata:   params.Metadata,
 				RetryParam: retry,
-				Deadline:   deadline,
+				Deadline:   params.Deadline,
 			}, targetRuntime)
 		},
 	)
+}
+
+// resolveCreator returns the effective creator for a submit: the per-task override when
+// provided, otherwise the client's DefaultCreator. An empty result is left as-is and is
+// rejected downstream by the Task entry's `validate:"required"` on Creator.
+func (c *clientImpl) resolveCreator(override *string) string {
+	if override != nil {
+		return *override
+	}
+	return c.defaultCreator
 }
 
 /*

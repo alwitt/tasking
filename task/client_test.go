@@ -35,7 +35,7 @@ type clientTestHarness struct {
 // newClientTestHarness build a Client backed by mocks, wiring the sender factory to return
 // `sender`. `config` is used verbatim so individual tests can inject retry overrides.
 func newClientTestHarness(
-	t *testing.T, utCtx context.Context, config models.TaskClientConfig,
+	utCtx context.Context, t *testing.T, config models.TaskClientConfig,
 ) (task.Client, *clientTestHarness) {
 	h := &clientTestHarness{
 		cbMock:     mocktest.NewUnitTestCallbackCollector(t),
@@ -51,6 +51,7 @@ func newClientTestHarness(
 
 	client, err := task.NewClient(utCtx, task.NewClientParams{
 		Name:             "unit-test-client",
+		DefaultCreator:   testDefaultCreator,
 		Persistence:      h.mockClient,
 		Config:           config,
 		Redis:            h.mockRedis,
@@ -61,9 +62,25 @@ func newClientTestHarness(
 	return client, h
 }
 
-// baseClientConfig a minimal valid client config with no per-task retry overrides.
+// testDefaultCreator the DefaultCreator wired into the test harness client, used to assert
+// creator resolution when a submit does not supply a per-task override.
+const testDefaultCreator = "unit-test-default-creator"
+
+// baseClientConfig a minimal valid client config. RetrySettings carries a single entry
+// because NewClient validates NewClientParams and TaskClientConfig.RetrySettings is
+// `required,gte=1`; the entry deliberately targets a task name no test submits, so tasks
+// named "unit-test-task" still fall through to the default retry parameters. Tests that
+// care about retry override resolution overwrite RetrySettings entirely.
 func baseClientConfig() models.TaskClientConfig {
-	return models.TaskClientConfig{SchedulerQueue: "scheduler-q"}
+	return models.TaskClientConfig{
+		SchedulerQueue: "scheduler-q",
+		RetrySettings: []models.PerTaskRetryParam{
+			{
+				TaskName: "unrelated-retry-task",
+				Retry:    models.RetryParam{InitialDelaySec: 5, MaxRetries: 3},
+			},
+		},
+	}
 }
 
 // runTxForClient returns a RunAndReturn body that invokes the transaction closure against the
@@ -133,7 +150,7 @@ func TestNewClient(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		_, h := newClientTestHarness(utCtx, t, baseClientConfig())
 		assert.NotNil(h.sender)
 	})
 }
@@ -149,14 +166,16 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 	t.Run("happy path submits a NEW_TASK for the created task", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		created := models.Task{ID: ulid.Make().String()}
 		mockDatabase := mockdb.NewDatabase(t)
 		mockDatabase.EXPECT().
 			DefineNewOneShotTask(mock.Anything, mock.MatchedBy(func(p db.NewTaskParameter) bool {
-				// With no override configured, the default retry parameters are used.
+				// With no override configured, the default retry parameters are used, and a
+				// nil creator override resolves to the client's DefaultCreator.
 				return p.Name == "unit-test-task" &&
+					p.Creator == testDefaultCreator &&
 					p.RetryParam.MaxRetries == models.DefaultTaskRetryParameters().MaxRetries
 			})).
 			Return(created, nil)
@@ -172,10 +191,50 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 			Return(nil)
 
 		task, err := client.DefineAndRunImmediateOneShotTask(
-			utCtx, "unit-test-task", nil, nil, nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, nil,
 		)
 		assert.Nil(err)
 		assert.Equal(created.ID, task.ID)
+	})
+
+	t.Run("per-task creator override takes precedence over the default", func(t *testing.T) {
+		assert := assert.New(t)
+
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
+
+		override := "per-task-creator"
+		created := models.Task{ID: ulid.Make().String()}
+		mockDatabase := mockdb.NewDatabase(t)
+		mockDatabase.EXPECT().
+			DefineNewOneShotTask(mock.Anything, mock.MatchedBy(func(p db.NewTaskParameter) bool {
+				return p.Creator == override
+			})).
+			Return(created, nil)
+		h.mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxForClient(mockDatabase))
+		h.sender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(nil)
+
+		_, err := client.DefineAndRunImmediateOneShotTask(
+			utCtx, task.DefineTaskParams{Name: "unit-test-task", Creator: &override}, nil,
+		)
+		assert.Nil(err)
+	})
+
+	t.Run("empty task name is rejected before any DB work", func(t *testing.T) {
+		assert := assert.New(t)
+
+		// No DB or sender expectations: params validation must short-circuit before touching
+		// either.
+		client, _ := newClientTestHarness(utCtx, t, baseClientConfig())
+
+		task, err := client.DefineAndRunImmediateOneShotTask(
+			utCtx, task.DefineTaskParams{}, nil,
+		)
+		assert.NotNil(err)
+		assert.Empty(task.ID)
+		var badInput goutils.BadInputError
+		assert.True(errors.As(err, &badInput), "expected BadInputError, got %T: %v", err, err)
 	})
 
 	t.Run("configured retry override is applied", func(t *testing.T) {
@@ -188,7 +247,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 				Retry:    models.RetryParam{InitialDelaySec: 11, MaxRetries: 7},
 			},
 		}
-		client, h := newClientTestHarness(t, utCtx, config)
+		client, h := newClientTestHarness(utCtx, t, config)
 
 		created := models.Task{ID: ulid.Make().String()}
 		mockDatabase := mockdb.NewDatabase(t)
@@ -203,7 +262,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 		h.sender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(nil)
 
 		_, err := client.DefineAndRunImmediateOneShotTask(
-			utCtx, "unit-test-task", nil, nil, nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, nil,
 		)
 		assert.Nil(err)
 	})
@@ -211,7 +270,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 	t.Run("define failure yields a PersistenceError and no submit", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		simErr := fmt.Errorf("simulated define failure")
 		mockDatabase := mockdb.NewDatabase(t)
@@ -224,7 +283,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 		// No EnqueueMessage expectation: the strict mock fails if a submit is attempted.
 
 		task, err := client.DefineAndRunImmediateOneShotTask(
-			utCtx, "unit-test-task", nil, nil, nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, nil,
 		)
 		assert.NotNil(err)
 		assert.Empty(task.ID)
@@ -237,7 +296,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 	t.Run("submit failure yields an IPCMessageQueueError and returns the task", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		created := models.Task{ID: ulid.Make().String()}
 		mockDatabase := mockdb.NewDatabase(t)
@@ -252,7 +311,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 		h.sender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(simErr)
 
 		task, err := client.DefineAndRunImmediateOneShotTask(
-			utCtx, "unit-test-task", nil, nil, nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, nil,
 		)
 		assert.NotNil(err)
 		// The task row was created; the caller gets it back despite the failed submit.
@@ -274,14 +333,19 @@ func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {
 	t.Run("happy path defines with the target runtime and submits", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		targetRuntime := time.Now().UTC().Add(time.Hour)
 		created := models.Task{ID: ulid.Make().String()}
 		mockDatabase := mockdb.NewDatabase(t)
 		mockDatabase.EXPECT().
 			DefineNewScheduledOneShotTask(
-				mock.Anything, mock.Anything, mock.MatchedBy(func(tgt time.Time) bool {
+				mock.Anything,
+				mock.MatchedBy(func(p db.NewTaskParameter) bool {
+					// A nil creator override resolves to the client's DefaultCreator.
+					return p.Creator == testDefaultCreator
+				}),
+				mock.MatchedBy(func(tgt time.Time) bool {
 					return tgt.Equal(targetRuntime)
 				}),
 			).
@@ -298,7 +362,7 @@ func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {
 			Return(nil)
 
 		task, err := client.DefineAndRunScheduledOneShotTask(
-			utCtx, "unit-test-task", nil, nil, targetRuntime, nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, targetRuntime, nil,
 		)
 		assert.Nil(err)
 		assert.Equal(created.ID, task.ID)
@@ -308,13 +372,13 @@ func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {
 		assert := assert.New(t)
 
 		// No DB or sender expectations: the guard must short-circuit before touching either.
-		client, _ := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, _ := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		targetRuntime := time.Now().UTC().Add(time.Hour)
 		deadline := targetRuntime.Add(-time.Minute)
 
 		task, err := client.DefineAndRunScheduledOneShotTask(
-			utCtx, "unit-test-task", nil, nil, targetRuntime, &deadline, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task", Deadline: &deadline}, targetRuntime, nil,
 		)
 		assert.NotNil(err)
 		assert.Empty(task.ID)
@@ -325,7 +389,7 @@ func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {
 	t.Run("submit failure yields an IPCMessageQueueError", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		created := models.Task{ID: ulid.Make().String()}
 		mockDatabase := mockdb.NewDatabase(t)
@@ -340,7 +404,7 @@ func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {
 		h.sender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(simErr)
 
 		task, err := client.DefineAndRunScheduledOneShotTask(
-			utCtx, "unit-test-task", nil, nil, time.Now().UTC().Add(time.Hour), nil, nil,
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, time.Now().UTC().Add(time.Hour), nil,
 		)
 		assert.NotNil(err)
 		assert.Equal(created.ID, task.ID)
@@ -361,7 +425,7 @@ func TestClientCancelTask(t *testing.T) {
 	t.Run("happy path submits a CANCEL_TASK for the task", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		taskID := ulid.Make().String()
 		mockDatabase := mockdb.NewDatabase(t)
@@ -385,7 +449,7 @@ func TestClientCancelTask(t *testing.T) {
 	t.Run("read failure yields a PersistenceError and no submit", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		taskID := ulid.Make().String()
 		simErr := fmt.Errorf("simulated read failure")
@@ -409,7 +473,7 @@ func TestClientCancelTask(t *testing.T) {
 	t.Run("submit failure yields an IPCMessageQueueError", func(t *testing.T) {
 		assert := assert.New(t)
 
-		client, h := newClientTestHarness(t, utCtx, baseClientConfig())
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
 
 		taskID := ulid.Make().String()
 		mockDatabase := mockdb.NewDatabase(t)

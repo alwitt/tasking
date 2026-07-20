@@ -53,6 +53,7 @@ func TestTaskDefineNewOneShotTask(t *testing.T) {
 			var err error
 			task0, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 				Name:       "unit-test-task",
+				Creator:    "unit-test-creator",
 				RetryParam: models.DefaultTaskRetryParameters(),
 			})
 			return err
@@ -87,6 +88,7 @@ func TestTaskDefineNewOneShotTask(t *testing.T) {
 			var err error
 			task2, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 				Name:       "unit-test-task-deadline",
+				Creator:    "unit-test-creator",
 				RetryParam: models.DefaultTaskRetryParameters(),
 				Deadline:   &deadline,
 			})
@@ -117,6 +119,7 @@ func TestTaskDefineNewScheduledOneShotTask(t *testing.T) {
 				ctx,
 				db.NewTaskParameter{
 					Name:       "unit-test-scheduled-task",
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 				},
 				targetRuntime,
@@ -185,6 +188,7 @@ func TestTaskStateTransitions(t *testing.T) {
 				var err error
 				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 					Name:       "unit-test-transition",
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 				})
 				return err
@@ -394,6 +398,7 @@ func TestTaskListTasks(t *testing.T) {
 				var err error
 				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 					Name:       name,
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 					Deadline:   deadline,
 				})
@@ -413,6 +418,7 @@ func TestTaskListTasks(t *testing.T) {
 					ctx,
 					db.NewTaskParameter{
 						Name:       name,
+						Creator:    "unit-test-creator",
 						RetryParam: models.DefaultTaskRetryParameters(),
 						Deadline:   deadline,
 					},
@@ -619,6 +625,7 @@ func TestTaskDeleteTask(t *testing.T) {
 				var err error
 				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 					Name:       "unit-test-delete",
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 				})
 				return err
@@ -746,6 +753,7 @@ func TestTaskExecDefineNewTaskExecInstance(t *testing.T) {
 				var err error
 				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 					Name:       "unit-test-exec-immediate",
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 					Deadline:   &deadline,
 				})
@@ -797,6 +805,7 @@ func TestTaskExecDefineNewTaskExecInstance(t *testing.T) {
 					ctx,
 					db.NewTaskParameter{
 						Name:       "unit-test-exec-scheduled",
+						Creator:    "unit-test-creator",
 						RetryParam: models.DefaultTaskRetryParameters(),
 					},
 					targetRuntime,
@@ -838,6 +847,7 @@ func TestTaskExecDefineNewTaskRetryExecInstance(t *testing.T) {
 			var err error
 			task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 				Name:       "unit-test-exec-retry",
+				Creator:    "unit-test-creator",
 				RetryParam: models.DefaultTaskRetryParameters(),
 			})
 			return err
@@ -915,6 +925,7 @@ func TestTaskExecStateTransitions(t *testing.T) {
 			var err error
 			parentTask, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 				Name:       "unit-test-exec-transition",
+				Creator:    "unit-test-creator",
 				RetryParam: models.DefaultTaskRetryParameters(),
 			})
 			return err
@@ -1145,6 +1156,7 @@ func TestTaskExecListAllExecutions(t *testing.T) {
 				var err error
 				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
 					Name:       "unit-test-list-exec-imm",
+					Creator:    "unit-test-creator",
 					RetryParam: models.DefaultTaskRetryParameters(),
 					Deadline:   &deadline,
 				})
@@ -1162,6 +1174,7 @@ func TestTaskExecListAllExecutions(t *testing.T) {
 					ctx,
 					db.NewTaskParameter{
 						Name:       "unit-test-list-exec-sched",
+						Creator:    "unit-test-creator",
 						RetryParam: models.DefaultTaskRetryParameters(),
 						Deadline:   &deadline,
 					},

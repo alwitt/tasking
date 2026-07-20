@@ -10,6 +10,7 @@ import (
 
 	"github.com/alwitt/tasking/db"
 	"github.com/alwitt/tasking/models"
+	"github.com/alwitt/tasking/task"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -104,8 +105,8 @@ func (_c *Client_CancelTask_Call) RunAndReturn(run func(ctx context.Context, tas
 }
 
 // DefineAndRunImmediateOneShotTask provides a mock function for the type Client
-func (_mock *Client) DefineAndRunImmediateOneShotTask(ctx context.Context, name string, parameters any, metadata any, deadline *time.Time, activeDBClient db.Database) (models.Task, error) {
-	ret := _mock.Called(ctx, name, parameters, metadata, deadline, activeDBClient)
+func (_mock *Client) DefineAndRunImmediateOneShotTask(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database) (models.Task, error) {
+	ret := _mock.Called(ctx, params, activeDBClient)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DefineAndRunImmediateOneShotTask")
@@ -113,16 +114,16 @@ func (_mock *Client) DefineAndRunImmediateOneShotTask(ctx context.Context, name 
 
 	var r0 models.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, any, any, *time.Time, db.Database) (models.Task, error)); ok {
-		return returnFunc(ctx, name, parameters, metadata, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, db.Database) (models.Task, error)); ok {
+		return returnFunc(ctx, params, activeDBClient)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, any, any, *time.Time, db.Database) models.Task); ok {
-		r0 = returnFunc(ctx, name, parameters, metadata, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, db.Database) models.Task); ok {
+		r0 = returnFunc(ctx, params, activeDBClient)
 	} else {
 		r0 = ret.Get(0).(models.Task)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, any, any, *time.Time, db.Database) error); ok {
-		r1 = returnFunc(ctx, name, parameters, metadata, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, task.DefineTaskParams, db.Database) error); ok {
+		r1 = returnFunc(ctx, params, activeDBClient)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -136,66 +137,48 @@ type Client_DefineAndRunImmediateOneShotTask_Call struct {
 
 // DefineAndRunImmediateOneShotTask is a helper method to define mock.On call
 //   - ctx context.Context
-//   - name string
-//   - parameters any
-//   - metadata any
-//   - deadline *time.Time
+//   - params task.DefineTaskParams
 //   - activeDBClient db.Database
-func (_e *Client_Expecter) DefineAndRunImmediateOneShotTask(ctx interface{}, name interface{}, parameters interface{}, metadata interface{}, deadline interface{}, activeDBClient interface{}) *Client_DefineAndRunImmediateOneShotTask_Call {
-	return &Client_DefineAndRunImmediateOneShotTask_Call{Call: _e.mock.On("DefineAndRunImmediateOneShotTask", ctx, name, parameters, metadata, deadline, activeDBClient)}
+func (_e *Client_Expecter) DefineAndRunImmediateOneShotTask(ctx interface{}, params interface{}, activeDBClient interface{}) *Client_DefineAndRunImmediateOneShotTask_Call {
+	return &Client_DefineAndRunImmediateOneShotTask_Call{Call: _e.mock.On("DefineAndRunImmediateOneShotTask", ctx, params, activeDBClient)}
 }
 
-func (_c *Client_DefineAndRunImmediateOneShotTask_Call) Run(run func(ctx context.Context, name string, parameters any, metadata any, deadline *time.Time, activeDBClient db.Database)) *Client_DefineAndRunImmediateOneShotTask_Call {
+func (_c *Client_DefineAndRunImmediateOneShotTask_Call) Run(run func(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database)) *Client_DefineAndRunImmediateOneShotTask_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 task.DefineTaskParams
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(task.DefineTaskParams)
 		}
-		var arg2 any
+		var arg2 db.Database
 		if args[2] != nil {
-			arg2 = args[2].(any)
-		}
-		var arg3 any
-		if args[3] != nil {
-			arg3 = args[3].(any)
-		}
-		var arg4 *time.Time
-		if args[4] != nil {
-			arg4 = args[4].(*time.Time)
-		}
-		var arg5 db.Database
-		if args[5] != nil {
-			arg5 = args[5].(db.Database)
+			arg2 = args[2].(db.Database)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
-			arg4,
-			arg5,
 		)
 	})
 	return _c
 }
 
-func (_c *Client_DefineAndRunImmediateOneShotTask_Call) Return(task models.Task, err error) *Client_DefineAndRunImmediateOneShotTask_Call {
-	_c.Call.Return(task, err)
+func (_c *Client_DefineAndRunImmediateOneShotTask_Call) Return(task1 models.Task, err error) *Client_DefineAndRunImmediateOneShotTask_Call {
+	_c.Call.Return(task1, err)
 	return _c
 }
 
-func (_c *Client_DefineAndRunImmediateOneShotTask_Call) RunAndReturn(run func(ctx context.Context, name string, parameters any, metadata any, deadline *time.Time, activeDBClient db.Database) (models.Task, error)) *Client_DefineAndRunImmediateOneShotTask_Call {
+func (_c *Client_DefineAndRunImmediateOneShotTask_Call) RunAndReturn(run func(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database) (models.Task, error)) *Client_DefineAndRunImmediateOneShotTask_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // DefineAndRunScheduledOneShotTask provides a mock function for the type Client
-func (_mock *Client) DefineAndRunScheduledOneShotTask(ctx context.Context, name string, parameters any, metadata any, targetRuntime time.Time, deadline *time.Time, activeDBClient db.Database) (models.Task, error) {
-	ret := _mock.Called(ctx, name, parameters, metadata, targetRuntime, deadline, activeDBClient)
+func (_mock *Client) DefineAndRunScheduledOneShotTask(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database) (models.Task, error) {
+	ret := _mock.Called(ctx, params, targetRuntime, activeDBClient)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DefineAndRunScheduledOneShotTask")
@@ -203,16 +186,16 @@ func (_mock *Client) DefineAndRunScheduledOneShotTask(ctx context.Context, name 
 
 	var r0 models.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, any, any, time.Time, *time.Time, db.Database) (models.Task, error)); ok {
-		return returnFunc(ctx, name, parameters, metadata, targetRuntime, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) (models.Task, error)); ok {
+		return returnFunc(ctx, params, targetRuntime, activeDBClient)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, any, any, time.Time, *time.Time, db.Database) models.Task); ok {
-		r0 = returnFunc(ctx, name, parameters, metadata, targetRuntime, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) models.Task); ok {
+		r0 = returnFunc(ctx, params, targetRuntime, activeDBClient)
 	} else {
 		r0 = ret.Get(0).(models.Task)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, any, any, time.Time, *time.Time, db.Database) error); ok {
-		r1 = returnFunc(ctx, name, parameters, metadata, targetRuntime, deadline, activeDBClient)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) error); ok {
+		r1 = returnFunc(ctx, params, targetRuntime, activeDBClient)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -226,65 +209,47 @@ type Client_DefineAndRunScheduledOneShotTask_Call struct {
 
 // DefineAndRunScheduledOneShotTask is a helper method to define mock.On call
 //   - ctx context.Context
-//   - name string
-//   - parameters any
-//   - metadata any
+//   - params task.DefineTaskParams
 //   - targetRuntime time.Time
-//   - deadline *time.Time
 //   - activeDBClient db.Database
-func (_e *Client_Expecter) DefineAndRunScheduledOneShotTask(ctx interface{}, name interface{}, parameters interface{}, metadata interface{}, targetRuntime interface{}, deadline interface{}, activeDBClient interface{}) *Client_DefineAndRunScheduledOneShotTask_Call {
-	return &Client_DefineAndRunScheduledOneShotTask_Call{Call: _e.mock.On("DefineAndRunScheduledOneShotTask", ctx, name, parameters, metadata, targetRuntime, deadline, activeDBClient)}
+func (_e *Client_Expecter) DefineAndRunScheduledOneShotTask(ctx interface{}, params interface{}, targetRuntime interface{}, activeDBClient interface{}) *Client_DefineAndRunScheduledOneShotTask_Call {
+	return &Client_DefineAndRunScheduledOneShotTask_Call{Call: _e.mock.On("DefineAndRunScheduledOneShotTask", ctx, params, targetRuntime, activeDBClient)}
 }
 
-func (_c *Client_DefineAndRunScheduledOneShotTask_Call) Run(run func(ctx context.Context, name string, parameters any, metadata any, targetRuntime time.Time, deadline *time.Time, activeDBClient db.Database)) *Client_DefineAndRunScheduledOneShotTask_Call {
+func (_c *Client_DefineAndRunScheduledOneShotTask_Call) Run(run func(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database)) *Client_DefineAndRunScheduledOneShotTask_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 task.DefineTaskParams
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(task.DefineTaskParams)
 		}
-		var arg2 any
+		var arg2 time.Time
 		if args[2] != nil {
-			arg2 = args[2].(any)
+			arg2 = args[2].(time.Time)
 		}
-		var arg3 any
+		var arg3 db.Database
 		if args[3] != nil {
-			arg3 = args[3].(any)
-		}
-		var arg4 time.Time
-		if args[4] != nil {
-			arg4 = args[4].(time.Time)
-		}
-		var arg5 *time.Time
-		if args[5] != nil {
-			arg5 = args[5].(*time.Time)
-		}
-		var arg6 db.Database
-		if args[6] != nil {
-			arg6 = args[6].(db.Database)
+			arg3 = args[3].(db.Database)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
-			arg5,
-			arg6,
 		)
 	})
 	return _c
 }
 
-func (_c *Client_DefineAndRunScheduledOneShotTask_Call) Return(task models.Task, err error) *Client_DefineAndRunScheduledOneShotTask_Call {
-	_c.Call.Return(task, err)
+func (_c *Client_DefineAndRunScheduledOneShotTask_Call) Return(task1 models.Task, err error) *Client_DefineAndRunScheduledOneShotTask_Call {
+	_c.Call.Return(task1, err)
 	return _c
 }
 
-func (_c *Client_DefineAndRunScheduledOneShotTask_Call) RunAndReturn(run func(ctx context.Context, name string, parameters any, metadata any, targetRuntime time.Time, deadline *time.Time, activeDBClient db.Database) (models.Task, error)) *Client_DefineAndRunScheduledOneShotTask_Call {
+func (_c *Client_DefineAndRunScheduledOneShotTask_Call) RunAndReturn(run func(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database) (models.Task, error)) *Client_DefineAndRunScheduledOneShotTask_Call {
 	_c.Call.Return(run)
 	return _c
 }

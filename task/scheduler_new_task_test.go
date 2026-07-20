@@ -41,6 +41,7 @@ func pendingTaskFixture(taskName string) models.Task {
 	return models.Task{
 		ID:                ulid.Make().String(),
 		TaskName:          taskName,
+		Creator:           "unit-test-creator",
 		TaskScheduleClass: models.TaskScheduleClassImmediateOneShot,
 		TaskState:         models.TaskStatePending,
 	}

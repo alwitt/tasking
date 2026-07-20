@@ -71,5 +71,5 @@ type TaskClientConfig struct {
 	// SchedulerQueue scheduler IPC queue name
 	SchedulerQueue string `mapstructure:"schedulerQueue" json:"schedulerQueue" validate:"required"`
 	// RetrySettings retry parameters to apply to specific task names
-	RetrySettings []PerTaskRetryParam `mapstructure:"retrySettings" json:"retrySettings" validate:"required,gte=1,dive"`
+	RetrySettings []PerTaskRetryParam `mapstructure:"retrySettings,omitempty" json:"retrySettings,omitempty" validate:"omitempty,dive"`
 }

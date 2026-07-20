@@ -36,6 +36,7 @@ func validTask(taskID, taskName string) models.Task {
 	return models.Task{
 		ID:                taskID,
 		TaskName:          taskName,
+		Creator:           "unit-test-creator",
 		TaskScheduleClass: models.TaskScheduleClassImmediateOneShot,
 		TaskState:         models.TaskStateActive,
 		RetryParams:       models.DefaultTaskRetryParameters(),

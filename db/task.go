@@ -48,6 +48,7 @@ func (c *databaseImpl) DefineNewOneShotTask(
 		Task: models.Task{
 			ID:                ulid.Make().String(),
 			TaskName:          params.Name,
+			Creator:           params.Creator,
 			TaskScheduleClass: models.TaskScheduleClassImmediateOneShot,
 			TaskState:         models.TaskStatePending,
 			Parameters:        datatypes.JSON(parametersStr),
@@ -107,6 +108,7 @@ func (c *databaseImpl) DefineNewScheduledOneShotTask(
 		Task: models.Task{
 			ID:                ulid.Make().String(),
 			TaskName:          params.Name,
+			Creator:           params.Creator,
 			TaskScheduleClass: models.TaskScheduleClassScheduledOneShot,
 			TaskState:         models.TaskStatePending,
 			Parameters:        datatypes.JSON(parametersStr),
