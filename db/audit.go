@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/alwitt/goutils"
 	"github.com/alwitt/tasking/models"
@@ -77,22 +78,49 @@ task engine failed to operate on (e.g. the receiver could not claim it, or could
 it to the executor).
 
 	@param ctx context.Context - execution context
-	@param taskID string - ID of the task that was failed
+	@param task models.Task - the task that was failed (supplies its ID and creator)
 	@param instanceID string - ID of the execution instance the engine failed to operate on
 	@param reason string - human-readable reason the engine reported the failure
 */
 func (c *databaseImpl) RecordTaskEngineFailure(
-	ctx context.Context, taskID, instanceID, reason string,
+	ctx context.Context, task models.Task, instanceID, reason string,
 ) error {
 	if _, err := c.defineNewSystemEvent(
 		ctx,
 		models.SystemEventTypeEngineFailedTask,
 		&models.SystemEventEngineFailedTask{
-			TaskID: taskID, InstanceID: instanceID, Reason: reason,
+			TaskID: task.ID, InstanceID: instanceID, Reason: reason, Creator: task.Creator,
 		},
 	); err != nil {
 		return err
 	}
+	return nil
+}
+
+/*
+MarkSystemEventsBroadcast stamp a set of audit events as broadcast by the notification
+producer. The broadcast_at IS NULL guard keeps the stamp idempotent: re-stamping (or a
+concurrent producer) is a no-op, not an overwrite.
+
+	@param ctx context.Context - execution context
+	@param eventIDs []string - IDs of the audit events to stamp
+	@param broadcastAt time.Time - broadcast timestamp to record
+*/
+func (c *databaseImpl) MarkSystemEventsBroadcast(
+	_ context.Context, eventIDs []string, broadcastAt time.Time,
+) error {
+	if len(eventIDs) == 0 {
+		return nil
+	}
+
+	tmp := c.db.
+		Model(&systemEventAuditEntry{}).
+		Where("id IN ? AND broadcast_at IS NULL", eventIDs).
+		UpdateColumn("broadcast_at", broadcastAt)
+	if tmp.Error != nil {
+		return models.NewSQLError("failed to mark system events broadcast", tmp.Error, true)
+	}
+
 	return nil
 }
 
@@ -122,6 +150,9 @@ func (c *databaseImpl) ListSystemEvents(
 	if filters.EventsBefore != nil {
 		query = query.Where("created_at <= ?", *filters.EventsBefore)
 	}
+	if filters.OnlyNotBroadcast {
+		query = query.Where("broadcast_at IS NULL")
+	}
 
 	if filters.Limit != nil {
 		query = query.Limit(*filters.Limit)
@@ -130,7 +161,7 @@ func (c *databaseImpl) ListSystemEvents(
 		query = query.Offset(*filters.Offset)
 	}
 
-	query = query.Order("created_at")
+	query = query.Order("id")
 
 	var entries []systemEventAuditEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {

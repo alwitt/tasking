@@ -41,7 +41,9 @@ func TestSystemEventAuditParseMetadata(t *testing.T) {
 
 			entry := models.SystemEventAudit{
 				EventType: eventType,
-				Metadata:  datatypes.JSON(`{"task_id": "unit-test-task-id"}`),
+				Metadata: datatypes.JSON(
+					`{"task_id": "unit-test-task-id", "creator": "unit-test-creator"}`,
+				),
 			}
 
 			parsed, err := entry.ParseMetadata(validator)
@@ -49,6 +51,7 @@ func TestSystemEventAuditParseMetadata(t *testing.T) {
 			taskEvent, ok := parsed.(models.SystemEventTaskEvents)
 			assert.True(ok, "expected SystemEventTaskEvents, got %T", parsed)
 			assert.Equal("unit-test-task-id", taskEvent.TaskID)
+			assert.Equal("unit-test-creator", taskEvent.Creator)
 		})
 	}
 
@@ -131,7 +134,7 @@ func TestSystemEventAuditParseMetadata(t *testing.T) {
 			EventType: models.SystemEventTypeEngineFailedTask,
 			Metadata: datatypes.JSON(
 				`{"task_id": "unit-test-task-id", "instance_id": "unit-test-instance-id", ` +
-					`"reason": "could not claim instance"}`,
+					`"reason": "could not claim instance", "creator": "unit-test-creator"}`,
 			),
 		}
 
@@ -142,6 +145,7 @@ func TestSystemEventAuditParseMetadata(t *testing.T) {
 		assert.Equal("unit-test-task-id", engineFailed.TaskID)
 		assert.Equal("unit-test-instance-id", engineFailed.InstanceID)
 		assert.Equal("could not claim instance", engineFailed.Reason)
+		assert.Equal("unit-test-creator", engineFailed.Creator)
 	})
 
 	t.Run("ENGINE_FAILED_TASK missing instance_id fails validation", func(t *testing.T) {

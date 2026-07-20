@@ -240,6 +240,29 @@ func TestTaskStateTransitions(t *testing.T) {
 		// intermediate ACTIVE event recorded
 		assert.Equal(activateBefore+1, countEvents(models.SystemEventTypeActivateTask))
 
+		// the recorded task-state event denormalizes the task's creator (routing key)
+		{
+			validate := validator.New()
+			assert.Nil(models.RegisterWithValidator(validate))
+			var events []models.SystemEventAudit
+			assert.Nil(persistence.UseDatabaseInTransaction(
+				utCtx, func(ctx context.Context, dbClient db.Database) error {
+					var err error
+					events, err = dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{
+						EventTypes: []models.SystemEventTypeENUM{models.SystemEventTypeActivateTask},
+					})
+					return err
+				},
+			))
+			assert.NotEmpty(events)
+			parsed, err := events[len(events)-1].ParseMetadata(validate)
+			assert.Nil(err)
+			meta, ok := parsed.(models.SystemEventTaskEvents)
+			assert.True(ok, "expected SystemEventTaskEvents, got %T", parsed)
+			assert.Equal(taskID, meta.TaskID)
+			assert.Equal("unit-test-creator", meta.Creator)
+		}
+
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
 				return dbClient.MarkTaskComplete(ctx, taskID)
@@ -1445,7 +1468,7 @@ func TestAuditRecordInvalidTaskIPCMessage(t *testing.T) {
 	assert.Len(events, 2)
 
 	// Both events must parse to the invalid-message payload and round-trip the fields.
-	// ListSystemEvents orders by created_at, so index 0 is the first recorded.
+	// ListSystemEvents orders by id (ULID), so index 0 is the first recorded.
 	for _, event := range events {
 		assert.Equal(models.SystemEventTypeInvalidTaskIPCMessage, event.EventType)
 	}

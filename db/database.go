@@ -29,6 +29,9 @@ type SystemEventQueryFilter struct {
 	EventsAfter *time.Time
 	// EventsBefore filter for events before this timestamp
 	EventsBefore *time.Time
+	// OnlyNotBroadcast when true, return only events not yet broadcast (broadcast_at IS
+	// NULL) — the notification producer's poll for its work queue.
+	OnlyNotBroadcast bool
 }
 
 // TaskQueryFilter query filter conditions to list tasks
@@ -104,6 +107,17 @@ type Database interface {
 	) ([]models.SystemEventAudit, error)
 
 	/*
+		MarkSystemEventsBroadcast stamp a set of audit events as broadcast by the
+		notification producer. The broadcast_at IS NULL guard keeps the stamp idempotent:
+		re-stamping (or a concurrent producer) is a no-op, not an overwrite.
+
+			@param ctx context.Context - execution context
+			@param eventIDs []string - IDs of the audit events to stamp
+			@param broadcastAt time.Time - broadcast timestamp to record
+	*/
+	MarkSystemEventsBroadcast(ctx context.Context, eventIDs []string, broadcastAt time.Time) error
+
+	/*
 		RecordInvalidTaskIPCMessage record an audit event for a task IPC message that could not
 		be processed (unreadable, unparsable, or of an unsupported/unknown type).
 
@@ -120,11 +134,11 @@ type Database interface {
 		not submit it to the executor).
 
 			@param ctx context.Context - execution context
-			@param taskID string - ID of the task that was failed
+			@param task models.Task - the task that was failed (supplies its ID and creator)
 			@param instanceID string - ID of the execution instance the engine failed to operate on
 			@param reason string - human-readable reason the engine reported the failure
 	*/
-	RecordTaskEngineFailure(ctx context.Context, taskID, instanceID, reason string) error
+	RecordTaskEngineFailure(ctx context.Context, task models.Task, instanceID, reason string) error
 
 	// ------------------------------------------------------------------------------------
 	// Task

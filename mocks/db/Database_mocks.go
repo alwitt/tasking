@@ -789,6 +789,69 @@ func (_c *Database_ListTasks_Call) RunAndReturn(run func(ctx context.Context, fi
 	return _c
 }
 
+// MarkSystemEventsBroadcast provides a mock function for the type Database
+func (_mock *Database) MarkSystemEventsBroadcast(ctx context.Context, eventIDs []string, broadcastAt time.Time) error {
+	ret := _mock.Called(ctx, eventIDs, broadcastAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkSystemEventsBroadcast")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, eventIDs, broadcastAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkSystemEventsBroadcast_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemEventsBroadcast'
+type Database_MarkSystemEventsBroadcast_Call struct {
+	*mock.Call
+}
+
+// MarkSystemEventsBroadcast is a helper method to define mock.On call
+//   - ctx context.Context
+//   - eventIDs []string
+//   - broadcastAt time.Time
+func (_e *Database_Expecter) MarkSystemEventsBroadcast(ctx interface{}, eventIDs interface{}, broadcastAt interface{}) *Database_MarkSystemEventsBroadcast_Call {
+	return &Database_MarkSystemEventsBroadcast_Call{Call: _e.mock.On("MarkSystemEventsBroadcast", ctx, eventIDs, broadcastAt)}
+}
+
+func (_c *Database_MarkSystemEventsBroadcast_Call) Run(run func(ctx context.Context, eventIDs []string, broadcastAt time.Time)) *Database_MarkSystemEventsBroadcast_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []string
+		if args[1] != nil {
+			arg1 = args[1].([]string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkSystemEventsBroadcast_Call) Return(err error) *Database_MarkSystemEventsBroadcast_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkSystemEventsBroadcast_Call) RunAndReturn(run func(ctx context.Context, eventIDs []string, broadcastAt time.Time) error) *Database_MarkSystemEventsBroadcast_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // MarkTaskActive provides a mock function for the type Database
 func (_mock *Database) MarkTaskActive(ctx context.Context, taskID string) error {
 	ret := _mock.Called(ctx, taskID)
@@ -1636,16 +1699,16 @@ func (_c *Database_RecordInvalidTaskIPCMessage_Call) RunAndReturn(run func(ctx c
 }
 
 // RecordTaskEngineFailure provides a mock function for the type Database
-func (_mock *Database) RecordTaskEngineFailure(ctx context.Context, taskID string, instanceID string, reason string) error {
-	ret := _mock.Called(ctx, taskID, instanceID, reason)
+func (_mock *Database) RecordTaskEngineFailure(ctx context.Context, task models.Task, instanceID string, reason string) error {
+	ret := _mock.Called(ctx, task, instanceID, reason)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RecordTaskEngineFailure")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
-		r0 = returnFunc(ctx, taskID, instanceID, reason)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Task, string, string) error); ok {
+		r0 = returnFunc(ctx, task, instanceID, reason)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1659,22 +1722,22 @@ type Database_RecordTaskEngineFailure_Call struct {
 
 // RecordTaskEngineFailure is a helper method to define mock.On call
 //   - ctx context.Context
-//   - taskID string
+//   - task models.Task
 //   - instanceID string
 //   - reason string
-func (_e *Database_Expecter) RecordTaskEngineFailure(ctx interface{}, taskID interface{}, instanceID interface{}, reason interface{}) *Database_RecordTaskEngineFailure_Call {
-	return &Database_RecordTaskEngineFailure_Call{Call: _e.mock.On("RecordTaskEngineFailure", ctx, taskID, instanceID, reason)}
+func (_e *Database_Expecter) RecordTaskEngineFailure(ctx interface{}, task interface{}, instanceID interface{}, reason interface{}) *Database_RecordTaskEngineFailure_Call {
+	return &Database_RecordTaskEngineFailure_Call{Call: _e.mock.On("RecordTaskEngineFailure", ctx, task, instanceID, reason)}
 }
 
-func (_c *Database_RecordTaskEngineFailure_Call) Run(run func(ctx context.Context, taskID string, instanceID string, reason string)) *Database_RecordTaskEngineFailure_Call {
+func (_c *Database_RecordTaskEngineFailure_Call) Run(run func(ctx context.Context, task models.Task, instanceID string, reason string)) *Database_RecordTaskEngineFailure_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 models.Task
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(models.Task)
 		}
 		var arg2 string
 		if args[2] != nil {
@@ -1699,7 +1762,7 @@ func (_c *Database_RecordTaskEngineFailure_Call) Return(err error) *Database_Rec
 	return _c
 }
 
-func (_c *Database_RecordTaskEngineFailure_Call) RunAndReturn(run func(ctx context.Context, taskID string, instanceID string, reason string) error) *Database_RecordTaskEngineFailure_Call {
+func (_c *Database_RecordTaskEngineFailure_Call) RunAndReturn(run func(ctx context.Context, task models.Task, instanceID string, reason string) error) *Database_RecordTaskEngineFailure_Call {
 	_c.Call.Return(run)
 	return _c
 }

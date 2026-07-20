@@ -62,6 +62,9 @@ type SystemEventAudit struct {
 	CreatedAt time.Time `json:"created_at"`
 	// UpdatedAt entry update timestamp
 	UpdatedAt time.Time `json:"updated_at"`
+	// BroadcastAt when the notification producer broadcast this event. NULL until
+	// broadcast. The producer's work-queue marker: SELECT … WHERE broadcast_at IS NULL.
+	BroadcastAt *time.Time `json:"broadcast_at,omitempty" gorm:"column:broadcast_at;index;default:null"`
 }
 
 // ParseMetadata parse the metadata based on the event type
@@ -120,6 +123,9 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 type SystemEventTaskEvents struct {
 	// TaskID task ID
 	TaskID string `json:"task_id" validate:"required"`
+	// Creator opaque identity of the task's creator; the notification routing key.
+	// Denormalized here so the producer can route from the audit row alone (no joins).
+	Creator string `json:"creator" validate:"required"`
 }
 
 // SystemEventEngineFailedTask records a task whose execution instance the core task engine
@@ -133,6 +139,9 @@ type SystemEventEngineFailedTask struct {
 	InstanceID string `json:"instance_id" validate:"required"`
 	// Reason human-readable reason the engine reported the failure
 	Reason string `json:"reason"`
+	// Creator opaque identity of the task's creator; the notification routing key.
+	// Denormalized here so the producer can route from the audit row alone (no joins).
+	Creator string `json:"creator" validate:"required"`
 }
 
 // SystemEventInvalidTaskIPCMessage records a task IPC message an IPC receiver got but could

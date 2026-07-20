@@ -348,7 +348,7 @@ func (s *schedulerImpl) processTaskExecutionEngineFailed(
 			// state changes above, so a task marked failed for this reason always has its
 			// matching audit entry.
 			if err = dbClient.RecordTaskEngineFailure(
-				dbCtx, taskEntry.ID, execInstanceEntry.ID,
+				dbCtx, taskEntry, execInstanceEntry.ID,
 				fmt.Sprintf(
 					"task engine failed to operate on execution instance %s", execInstanceEntry.ID,
 				),

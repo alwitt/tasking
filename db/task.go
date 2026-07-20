@@ -189,7 +189,7 @@ func (c *databaseImpl) updateTaskState(
 	}
 	if eventType, found := eventTypeMap[nextState]; found {
 		if _, err := c.defineNewSystemEvent(
-			ctx, eventType, &models.SystemEventTaskEvents{TaskID: taskID},
+			ctx, eventType, &models.SystemEventTaskEvents{TaskID: taskID, Creator: entry.Creator},
 		); err != nil {
 			return models.NewSQLError(
 				fmt.Sprintf(
@@ -368,7 +368,7 @@ func (c *databaseImpl) DeleteTask(ctx context.Context, taskID string) error {
 	if _, err := c.defineNewSystemEvent(
 		ctx,
 		models.SystemEventTypeDeleteTask,
-		&models.SystemEventTaskEvents{TaskID: taskID},
+		&models.SystemEventTaskEvents{TaskID: taskID, Creator: entry.Creator},
 	); err != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to record delete task %s system event", taskID), err, true,

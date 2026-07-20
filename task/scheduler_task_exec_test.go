@@ -1107,7 +1107,7 @@ func TestProcessTaskExecutionEngineFailed(t *testing.T) {
 		// The audit write is inside the transaction, so its failure propagates and rolls
 		// back the finalize + fail: the whole handler returns an error.
 		mockDatabase.EXPECT().
-			RecordTaskEngineFailure(mock.Anything, task.ID, instance.ID, mock.Anything).
+			RecordTaskEngineFailure(mock.Anything, task, instance.ID, mock.Anything).
 			Return(simErr)
 
 		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())
@@ -1133,7 +1133,7 @@ func TestProcessTaskExecutionEngineFailed(t *testing.T) {
 		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
 		mockDatabase.EXPECT().MarkTaskFailed(mock.Anything, task.ID).Return(nil)
 		mockDatabase.EXPECT().
-			RecordTaskEngineFailure(mock.Anything, task.ID, instance.ID, mock.Anything).
+			RecordTaskEngineFailure(mock.Anything, task, instance.ID, mock.Anything).
 			Return(nil)
 
 		err := s.processTaskExecutionEngineFailed(utCtx, instance.ID, time.Now().UTC())

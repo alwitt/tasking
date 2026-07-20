@@ -37,7 +37,9 @@ func TestAuditRecordTaskEngineFailure(t *testing.T) {
 	assert.Nil(persistence.UseDatabaseInTransaction(
 		utCtx, func(ctx context.Context, dbClient db.Database) error {
 			return dbClient.RecordTaskEngineFailure(
-				ctx, "unit-test-task-id", "unit-test-instance-id", "could not claim instance",
+				ctx,
+				models.Task{ID: "unit-test-task-id", Creator: "unit-test-creator"},
+				"unit-test-instance-id", "could not claim instance",
 			)
 		},
 	))
@@ -64,6 +66,7 @@ func TestAuditRecordTaskEngineFailure(t *testing.T) {
 			assert.Equal("unit-test-task-id", metadata.TaskID)
 			assert.Equal("unit-test-instance-id", metadata.InstanceID)
 			assert.Equal("could not claim instance", metadata.Reason)
+			assert.Equal("unit-test-creator", metadata.Creator)
 			return nil
 		},
 	))
@@ -106,7 +109,9 @@ func TestAuditListSystemEvents(t *testing.T) {
 				return err
 			}
 			return dbClient.RecordTaskEngineFailure(
-				ctx, "task-x", "instance-x", "could not submit to executor",
+				ctx,
+				models.Task{ID: "task-x", Creator: "creator-x"},
+				"instance-x", "could not submit to executor",
 			)
 		},
 	))
@@ -140,7 +145,7 @@ func TestAuditListSystemEvents(t *testing.T) {
 		},
 	))
 
-	// Limit + Offset paginate (results are ordered by created_at)
+	// Limit + Offset paginate (results are ordered by id)
 	assert.Nil(persistence.UseDatabaseInTransaction(
 		utCtx, func(ctx context.Context, dbClient db.Database) error {
 			limit := 2
@@ -183,7 +188,9 @@ func TestAuditListSystemEventsTimeRange(t *testing.T) {
 	// Record an event
 	assert.Nil(persistence.UseDatabaseInTransaction(
 		utCtx, func(ctx context.Context, dbClient db.Database) error {
-			return dbClient.RecordTaskEngineFailure(ctx, "task-x", "instance-x", "boom")
+			return dbClient.RecordTaskEngineFailure(
+				ctx, models.Task{ID: "task-x", Creator: "creator-x"}, "instance-x", "boom",
+			)
 		},
 	))
 
@@ -287,4 +294,107 @@ func TestAuditListSystemEventsInvalidFilter(t *testing.T) {
 	assert.NotNil(err)
 	var validationErr goutils.ValidationError
 	assert.ErrorAs(err, &validationErr)
+}
+
+func TestAuditBroadcastMarker(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+	testDB := fmt.Sprintf("/tmp/tasking_ut_%s.db", ulid.Make().String())
+	log.WithField("db", testDB).Debug("Test database")
+
+	persistence := getUnitTestPersistence(utCtx, t, testDB)
+
+	// Seed three events
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			for i := 0; i < 3; i++ {
+				if err := dbClient.RecordTaskEngineFailure(
+					ctx,
+					models.Task{ID: fmt.Sprintf("task-%d", i), Creator: "creator-x"},
+					fmt.Sprintf("instance-%d", i), "boom",
+				); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	))
+
+	// All three are not-yet-broadcast, ordered by id
+	var allIDs []string
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			events, err := dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{
+				OnlyNotBroadcast: true,
+			})
+			if err != nil {
+				return err
+			}
+			assert.Len(events, 3)
+			for _, e := range events {
+				assert.Nil(e.BroadcastAt)
+				allIDs = append(allIDs, e.ID)
+			}
+			// ordered by id (ULID, lexicographically ascending)
+			assert.True(allIDs[0] < allIDs[1] && allIDs[1] < allIDs[2])
+			return nil
+		},
+	))
+
+	// Empty input is a no-op
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			return dbClient.MarkSystemEventsBroadcast(ctx, nil, time.Now())
+		},
+	))
+
+	// Stamp the first two
+	stampAt := time.Now().UTC()
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			return dbClient.MarkSystemEventsBroadcast(ctx, allIDs[:2], stampAt)
+		},
+	))
+
+	// Only the third remains not-yet-broadcast
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			events, err := dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{
+				OnlyNotBroadcast: true,
+			})
+			if err != nil {
+				return err
+			}
+			assert.Len(events, 1)
+			assert.Equal(allIDs[2], events[0].ID)
+			return nil
+		},
+	))
+
+	// Re-stamping an already-stamped event does not overwrite its broadcast_at (idempotency
+	// guard). Stamp allIDs[0] again with a distinctly later time; its recorded time is unchanged.
+	laterStamp := stampAt.Add(time.Hour)
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			return dbClient.MarkSystemEventsBroadcast(ctx, []string{allIDs[0]}, laterStamp)
+		},
+	))
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			events, err := dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{})
+			if err != nil {
+				return err
+			}
+			for _, e := range events {
+				if e.ID == allIDs[0] {
+					assert.NotNil(e.BroadcastAt)
+					// still the original stamp, not laterStamp
+					assert.WithinDuration(stampAt, *e.BroadcastAt, time.Second)
+				}
+			}
+			return nil
+		},
+	))
 }
