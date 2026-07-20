@@ -120,6 +120,21 @@ func NewTaskSchedulerError(message string, core error, getCallStack bool) TaskSc
 	return TaskSchedulerError{BaseError: base}
 }
 
+// NotifyProducerError error operating the notification producer component: both the
+// machinery (validator/timer setup, lifecycle start/stop) and the poll→publish→stamp loop
+// (audit-log polling, channel routing, pub/sub publishing, broadcast stamping). Wraps the
+// underlying cause (e.g. PersistenceError, RedisError, ConsistencyError) as Core.
+type NotifyProducerError struct{ goutils.BaseError }
+
+// NewNotifyProducerError builds a NotifyProducerError, optionally capturing the call stack.
+func NewNotifyProducerError(message string, core error, getCallStack bool) NotifyProducerError {
+	base := goutils.BaseError{Name: "NotifyProducerError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return NotifyProducerError{BaseError: base}
+}
+
 // TaskMaintenanceError error encountered during the scheduler's periodic maintenance
 // sweep (performMaintenance). Used only by performMaintenance to wrap failures of the
 // list-scan transactions and of the per-item handler calls it drives.

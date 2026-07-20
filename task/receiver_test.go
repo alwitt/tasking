@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/alwitt/goutils"
+	mockredis "github.com/alwitt/goutils/mocks/redis"
+	goutilsRedis "github.com/alwitt/goutils/redis"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
 	mocktask "github.com/alwitt/tasking/mocks/task"
@@ -35,7 +37,7 @@ func validReceiverConfig() models.TaskReceiverConfig {
 func baseReceiverParams(
 	cbMock *mocktest.UnitTestCallbackCollector,
 	mockClient *mockdb.Client,
-	mockRedis *mocktest.RedisClientForTest,
+	mockRedis goutilsRedis.Client,
 ) task.NewReceiverParams {
 	return task.NewReceiverParams{
 		Support: task.ExecutorSupport{
@@ -76,7 +78,7 @@ func TestNewReceiver(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		cbMock.EXPECT().
 			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -96,7 +98,7 @@ func TestNewReceiver(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		// Receiver factory succeeds so the executor loop is reached.
 		cbMock.EXPECT().
@@ -122,7 +124,7 @@ func TestNewReceiver(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		// Receiver + executor factories succeed so the sender step is reached.
 		cbMock.EXPECT().
@@ -151,7 +153,7 @@ func TestNewReceiver(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		cbMock.EXPECT().
 			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).

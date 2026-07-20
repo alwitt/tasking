@@ -114,7 +114,10 @@ func NewScheduler(
 	var err error
 	instance.worker, err = goutils.GetNewTaskProcessorInstance(
 		instance.workerCtx, "schedule-request-processor", 10, log.Fields{
-			"module": "task", "component": "task-scheduler", "sub-component": "request-processor",
+			"package":       "tasking",
+			"module":        "task",
+			"component":     "task-scheduler",
+			"sub-component": "request-processor",
 		}, nil,
 	)
 	if err != nil {

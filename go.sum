@@ -18,8 +18,8 @@ cloud.google.com/go/pubsub v1.49.0/go.mod h1:K1FswTWP+C1tI/nfi3HQecoVeFvL4HUOB1t
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/alwitt/goutils v0.12.1-rc1 h1:QG4a50l9QcF/gIRwyOMRyTMcoOi3oKmBUzeyAYTjCoU=
-github.com/alwitt/goutils v0.12.1-rc1/go.mod h1:EWTjgNRtRZe3E7+QxelCuZmfAxPjunjJONfZkFH9GSE=
+github.com/alwitt/goutils v0.12.1-rc2 h1:jVqncu+srAZ2hzkVadOiBL92fH37QX6i3Epeh+DEuno=
+github.com/alwitt/goutils v0.12.1-rc2/go.mod h1:EWTjgNRtRZe3E7+QxelCuZmfAxPjunjJONfZkFH9GSE=
 github.com/apex/log v1.9.0 h1:FHtw/xuaM8AgmvDDTI9fiwoAL25Sq2cxojnZICUU8l0=
 github.com/apex/log v1.9.0/go.mod h1:m82fZlWIuiWzWP04XCTXmnX0xRkYYbCdYn8jbJeLBEA=
 github.com/apex/logs v1.0.0/go.mod h1:XzxuLZ5myVHDy9SAmYpamKKRNApGj54PfYLcFrXqDwo=

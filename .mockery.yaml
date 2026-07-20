@@ -20,6 +20,9 @@ packages:
   github.com/alwitt/tasking/models:
     config:
       all: true
+  github.com/alwitt/tasking/notify:
+    config:
+      all: true
   github.com/alwitt/tasking/task:
     config:
       all: true

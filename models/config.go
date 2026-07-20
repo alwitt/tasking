@@ -58,6 +58,28 @@ func (c TaskSchedulerConfig) MaintenanceTimerInt() time.Duration {
 	return time.Second * time.Duration(c.MaintenanceTimerIntSecs)
 }
 
+// NotificationProducerConfig config for the notification producer, the component that polls
+// the audit log for un-broadcast events and publishes them over Redis pub/sub channels.
+type NotificationProducerConfig struct {
+	// PollIntervalSecs interval, in seconds, between audit-log polls
+	PollIntervalSecs int `mapstructure:"pollIntervalSecs" json:"pollIntervalSecs" validate:"required,gte=1"`
+	// BatchSize max number of un-broadcast events to process per poll
+	BatchSize int `mapstructure:"batchSize" json:"batchSize" validate:"required,gte=1"`
+	// EmitFirehose when true, publish every event on the `notify:all` firehose channel
+	EmitFirehose bool `mapstructure:"emitFirehose" json:"emitFirehose"`
+	// EmitTypeChan when true, publish every event on its `notify:type:<type>` channel
+	EmitTypeChan bool `mapstructure:"emitTypeChan" json:"emitTypeChan"`
+	// EmitCreator when true, publish creator-bearing events on their `notify:creator:<creator>`
+	// and `notify:creator:<creator>:type:<type>` channels
+	EmitCreator bool `mapstructure:"emitCreator" json:"emitCreator"`
+	// the subject channel (`notify:subject:<subject-type>:<subject-id>`) is always emitted
+}
+
+// PollInterval convert PollIntervalSecs to duration
+func (c NotificationProducerConfig) PollInterval() time.Duration {
+	return time.Second * time.Duration(c.PollIntervalSecs)
+}
+
 // PerTaskRetryParam retry parameters to apply to a specific task name
 type PerTaskRetryParam struct {
 	// TaskName task name

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	mockredis "github.com/alwitt/goutils/mocks/redis"
 	goutilsRedis "github.com/alwitt/goutils/redis"
 	"github.com/alwitt/tasking/common"
-	mocktest "github.com/alwitt/tasking/mocks/test"
 	"github.com/apex/log"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -39,9 +39,9 @@ func TestRedisIPCMessageReceiveNew(t *testing.T) {
 
 	// Case 0: both queue handles resolve successfully
 	{
-		mockClient := mocktest.NewRedisClientForTest(t)
-		mainQueue := mocktest.NewRedisQueueForTest(t)
-		bufferQueue := mocktest.NewRedisQueueForTest(t)
+		mockClient := mockredis.NewClient(t)
+		mainQueue := mockredis.NewQueue(t)
+		bufferQueue := mockredis.NewQueue(t)
 
 		mockClient.EXPECT().
 			GetQueueHandle(utCtx, mainQueueName).
@@ -59,7 +59,7 @@ func TestRedisIPCMessageReceiveNew(t *testing.T) {
 
 	// Case 1: failure fetching the main queue handle
 	{
-		mockClient := mocktest.NewRedisClientForTest(t)
+		mockClient := mockredis.NewClient(t)
 
 		mockClient.EXPECT().
 			GetQueueHandle(utCtx, mainQueueName).
@@ -73,8 +73,8 @@ func TestRedisIPCMessageReceiveNew(t *testing.T) {
 
 	// Case 2: failure fetching the buffer queue handle
 	{
-		mockClient := mocktest.NewRedisClientForTest(t)
-		mainQueue := mocktest.NewRedisQueueForTest(t)
+		mockClient := mockredis.NewClient(t)
+		mainQueue := mockredis.NewQueue(t)
 
 		mockClient.EXPECT().
 			GetQueueHandle(utCtx, mainQueueName).
@@ -99,10 +99,10 @@ func buildTestReceiver(
 	t *testing.T,
 	queueName string,
 	reader string,
-	mainQueue *mocktest.RedisQueueForTest,
-	bufferQueue *mocktest.RedisQueueForTest,
+	mainQueue goutilsRedis.Queue,
+	bufferQueue goutilsRedis.Queue,
 ) common.IPCMessageReceive {
-	mockClient := mocktest.NewRedisClientForTest(t)
+	mockClient := mockredis.NewClient(t)
 
 	mainQueueName := common.BuildIPCMessageQueueName(queueName)
 	bufferQueueName := common.BuildIPCMessageBufferQueueName(queueName, reader)
@@ -127,8 +127,8 @@ func TestRedisIPCMessageReceiveDequeueMessage(t *testing.T) {
 	mainQueueName := common.BuildIPCMessageQueueName(queueName)
 	bufferQueueName := common.BuildIPCMessageBufferQueueName(queueName, reader)
 
-	mainQueue := mocktest.NewRedisQueueForTest(t)
-	bufferQueue := mocktest.NewRedisQueueForTest(t)
+	mainQueue := mockredis.NewQueue(t)
+	bufferQueue := mockredis.NewQueue(t)
 	// The receiver reads the buffer queue name when moving the message off the main queue,
 	// and the main queue name when building error messages.
 	bufferQueue.EXPECT().QueueName().Return(bufferQueueName)
@@ -188,8 +188,8 @@ func TestRedisIPCMessageReceiveDequeueBufferedMessage(t *testing.T) {
 	reader := uuid.NewString()
 	bufferQueueName := common.BuildIPCMessageBufferQueueName(queueName, reader)
 
-	mainQueue := mocktest.NewRedisQueueForTest(t)
-	bufferQueue := mocktest.NewRedisQueueForTest(t)
+	mainQueue := mockredis.NewQueue(t)
+	bufferQueue := mockredis.NewQueue(t)
 	// The buffer queue name is read when building error messages.
 	bufferQueue.EXPECT().QueueName().Return(bufferQueueName)
 
@@ -247,8 +247,8 @@ func TestRedisIPCMessageReceiveDeleteBufferedMessage(t *testing.T) {
 	reader := uuid.NewString()
 	bufferQueueName := common.BuildIPCMessageBufferQueueName(queueName, reader)
 
-	mainQueue := mocktest.NewRedisQueueForTest(t)
-	bufferQueue := mocktest.NewRedisQueueForTest(t)
+	mainQueue := mockredis.NewQueue(t)
+	bufferQueue := mockredis.NewQueue(t)
 	// The buffer queue name is read when building error messages.
 	bufferQueue.EXPECT().QueueName().Return(bufferQueueName)
 
@@ -287,8 +287,8 @@ func TestRedisIPCMessageReceiveReEnqueueOnMainQueue(t *testing.T) {
 	reader := uuid.NewString()
 	mainQueueName := common.BuildIPCMessageQueueName(queueName)
 
-	mainQueue := mocktest.NewRedisQueueForTest(t)
-	bufferQueue := mocktest.NewRedisQueueForTest(t)
+	mainQueue := mockredis.NewQueue(t)
+	bufferQueue := mockredis.NewQueue(t)
 	// The receiver reads the main queue name as the destination for the re-enqueue.
 	mainQueue.EXPECT().QueueName().Return(mainQueueName)
 
@@ -331,8 +331,8 @@ func TestRedisIPCMessageSendNew(t *testing.T) {
 
 	// Case 0: the main queue handle resolves successfully
 	{
-		mockClient := mocktest.NewRedisClientForTest(t)
-		mainQueue := mocktest.NewRedisQueueForTest(t)
+		mockClient := mockredis.NewClient(t)
+		mainQueue := mockredis.NewQueue(t)
 
 		mockClient.EXPECT().
 			GetQueueHandle(utCtx, mainQueueName).
@@ -346,7 +346,7 @@ func TestRedisIPCMessageSendNew(t *testing.T) {
 
 	// Case 1: failure fetching the main queue handle
 	{
-		mockClient := mocktest.NewRedisClientForTest(t)
+		mockClient := mockredis.NewClient(t)
 
 		mockClient.EXPECT().
 			GetQueueHandle(utCtx, mainQueueName).
@@ -369,8 +369,8 @@ func TestRedisIPCMessageSendEnqueueMessage(t *testing.T) {
 	sender := uuid.NewString()
 	mainQueueName := common.BuildIPCMessageQueueName(queueName)
 
-	mockClient := mocktest.NewRedisClientForTest(t)
-	mainQueue := mocktest.NewRedisQueueForTest(t)
+	mockClient := mockredis.NewClient(t)
+	mainQueue := mockredis.NewQueue(t)
 	// The main queue name is read when building error messages.
 	mainQueue.EXPECT().QueueName().Return(mainQueueName)
 

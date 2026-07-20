@@ -34,13 +34,3 @@ type UnitTestCallbackCollector interface {
 		ctx context.Context, queueName string, redis goutilsRedis.Client, sender string,
 	) (common.IPCMessageSend, error)
 }
-
-// RedisClientForTest wrapper interface for generating a mock of `goutilsRedis.Client`
-type RedisClientForTest interface {
-	goutilsRedis.Client
-}
-
-// RedisQueueForTest wrapper interface for generating a mock of `goutilsRedis.Queue`
-type RedisQueueForTest interface {
-	goutilsRedis.Queue
-}

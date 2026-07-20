@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/alwitt/goutils"
+	mockredis "github.com/alwitt/goutils/mocks/redis"
+	goutilsRedis "github.com/alwitt/goutils/redis"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
 	mocktest "github.com/alwitt/tasking/mocks/test"
@@ -35,7 +37,7 @@ func validSchedulerConfig() models.TaskSchedulerConfig {
 func baseSchedulerParams(
 	cbMock *mocktest.UnitTestCallbackCollector,
 	mockClient *mockdb.Client,
-	mockRedis *mocktest.RedisClientForTest,
+	mockRedis goutilsRedis.Client,
 ) task.NewSchedulerParams {
 	return task.NewSchedulerParams{
 		Persistence:        mockClient,
@@ -72,7 +74,7 @@ func TestNewScheduler(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		cbMock.EXPECT().
 			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -92,7 +94,7 @@ func TestNewScheduler(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		// Receiver factory succeeds so the per-mapping sender loop is reached.
 		cbMock.EXPECT().
@@ -116,7 +118,7 @@ func TestNewScheduler(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		cbMock.EXPECT().
 			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).

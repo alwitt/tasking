@@ -69,15 +69,24 @@ type SystemEventAudit struct {
 
 // ParseMetadata parse the metadata based on the event type
 func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interface{}, error) {
+	return parseSystemEventMetadata(a.EventType, a.Metadata, validator)
+}
+
+// parseSystemEventMetadata parse raw system-event metadata into its typed struct based on the
+// event type, then validate it. Shared by SystemEventAudit and NotificationEvent so the two
+// stay in lockstep.
+func parseSystemEventMetadata(
+	eventType SystemEventTypeENUM, metadata []byte, validator *validator.Validate,
+) (interface{}, error) {
 	validate := func(parsed interface{}) error {
 		if err := validator.Struct(parsed); err != nil {
 			return goutils.NewValidationError(
-				fmt.Sprintf("system event '%s' metadata validation failed", a.EventType), err, true,
+				fmt.Sprintf("system event '%s' metadata validation failed", eventType), err, true,
 			)
 		}
 		return nil
 	}
-	switch a.EventType {
+	switch eventType {
 	case SystemEventTypeActivateTask:
 		fallthrough
 	case SystemEventTypeCompleteTask:
@@ -90,31 +99,31 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 		fallthrough
 	case SystemEventTypeDeleteTask:
 		var parsed SystemEventTaskEvents
-		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+		if err := json.Unmarshal(metadata, &parsed); err != nil {
 			return nil, goutils.NewConsistencyError(
-				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+				fmt.Sprintf("system event '%s' metadata parse failed", eventType), err, true,
 			)
 		}
 		return parsed, validate(&parsed)
 	case SystemEventTypeInvalidTaskIPCMessage:
 		var parsed SystemEventInvalidTaskIPCMessage
-		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+		if err := json.Unmarshal(metadata, &parsed); err != nil {
 			return nil, goutils.NewConsistencyError(
-				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+				fmt.Sprintf("system event '%s' metadata parse failed", eventType), err, true,
 			)
 		}
 		return parsed, validate(&parsed)
 	case SystemEventTypeEngineFailedTask:
 		var parsed SystemEventEngineFailedTask
-		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+		if err := json.Unmarshal(metadata, &parsed); err != nil {
 			return nil, goutils.NewConsistencyError(
-				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+				fmt.Sprintf("system event '%s' metadata parse failed", eventType), err, true,
 			)
 		}
 		return parsed, validate(&parsed)
 	default:
 		return nil, goutils.NewConsistencyError(
-			fmt.Sprintf("unsupported system event type '%s'", a.EventType), nil, true,
+			fmt.Sprintf("unsupported system event type '%s'", eventType), nil, true,
 		)
 	}
 }

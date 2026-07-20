@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	mockredis "github.com/alwitt/goutils/mocks/redis"
 	goutilsRedis "github.com/alwitt/goutils/redis"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
@@ -58,7 +59,7 @@ type initTestReceiver struct {
 func newInitTestReceiver(t *testing.T) initTestReceiver {
 	cbMock := mocktest.NewUnitTestCallbackCollector(t)
 	mockClient := mockdb.NewClient(t)
-	mockRedis := mocktest.NewRedisClientForTest(t)
+	mockRedis := mockredis.NewClient(t)
 	ipcReceiver := mockcommon.NewIPCMessageReceive(t)
 	sender := mockcommon.NewIPCMessageSend(t)
 	executor := mocktask.NewExecutor(t)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alwitt/goutils"
+	mockredis "github.com/alwitt/goutils/mocks/redis"
 	goutilsRedis "github.com/alwitt/goutils/redis"
 	"github.com/alwitt/tasking/db"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
@@ -28,7 +29,7 @@ import (
 type clientTestHarness struct {
 	cbMock     *mocktest.UnitTestCallbackCollector
 	mockClient *mockdb.Client
-	mockRedis  *mocktest.RedisClientForTest
+	mockRedis  goutilsRedis.Client
 	sender     *mockcommon.IPCMessageSend
 }
 
@@ -40,7 +41,7 @@ func newClientTestHarness(
 	h := &clientTestHarness{
 		cbMock:     mocktest.NewUnitTestCallbackCollector(t),
 		mockClient: mockdb.NewClient(t),
-		mockRedis:  mocktest.NewRedisClientForTest(t),
+		mockRedis:  mockredis.NewClient(t),
 		sender:     mockcommon.NewIPCMessageSend(t),
 	}
 
@@ -127,7 +128,7 @@ func TestNewClient(t *testing.T) {
 
 		cbMock := mocktest.NewUnitTestCallbackCollector(t)
 		mockClient := mockdb.NewClient(t)
-		mockRedis := mocktest.NewRedisClientForTest(t)
+		mockRedis := mockredis.NewClient(t)
 
 		simErr := fmt.Errorf("simulated factory failure")
 		cbMock.EXPECT().
