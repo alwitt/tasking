@@ -34,6 +34,46 @@ const (
 	// task's execution instances (e.g. the receiver could not claim it, or could not submit
 	// it to the executor); distinct from a failure during actual task execution
 	SystemEventTypeEngineFailedTask SystemEventTypeENUM = "ENGINE_FAILED_TASK"
+
+	// --- Workflow events ---
+
+	// SystemEventTypeDefineWorkflow defined a new workflow
+	SystemEventTypeDefineWorkflow SystemEventTypeENUM = "DEFINE_WORKFLOW"
+	// SystemEventTypeWorkflowRunning a workflow entered the running state
+	SystemEventTypeWorkflowRunning SystemEventTypeENUM = "WORKFLOW_RUNNING"
+	// SystemEventTypeWorkflowComplete a workflow completed
+	SystemEventTypeWorkflowComplete SystemEventTypeENUM = "WORKFLOW_COMPLETE"
+	// SystemEventTypeWorkflowFailed a workflow failed
+	SystemEventTypeWorkflowFailed SystemEventTypeENUM = "WORKFLOW_FAILED"
+	// SystemEventTypeWorkflowTimedOut a workflow timed out
+	SystemEventTypeWorkflowTimedOut SystemEventTypeENUM = "WORKFLOW_TIMED_OUT"
+	// SystemEventTypeWorkflowCancelling a workflow is being cancelled
+	SystemEventTypeWorkflowCancelling SystemEventTypeENUM = "WORKFLOW_CANCELLING"
+	// SystemEventTypeWorkflowCancelled a workflow is cancelled
+	SystemEventTypeWorkflowCancelled SystemEventTypeENUM = "WORKFLOW_CANCELLED"
+	// SystemEventTypeWorkflowDeadlineUpdate a workflow's deadline was updated
+	SystemEventTypeWorkflowDeadlineUpdate SystemEventTypeENUM = "WORKFLOW_DEADLINE_UPDATE"
+	// SystemEventTypeDeleteWorkflow deleted a workflow
+	SystemEventTypeDeleteWorkflow SystemEventTypeENUM = "DELETE_WORKFLOW"
+
+	// --- Workflow step events ---
+
+	// SystemEventTypeWorkflowStepDefined a workflow step was reverted to defined (revived)
+	SystemEventTypeWorkflowStepDefined SystemEventTypeENUM = "WORKFLOW_STEP_DEFINED"
+	// SystemEventTypeWorkflowStepPending a workflow step entered the pending state
+	SystemEventTypeWorkflowStepPending SystemEventTypeENUM = "WORKFLOW_STEP_PENDING"
+	// SystemEventTypeWorkflowStepRunning a workflow step entered the running state
+	SystemEventTypeWorkflowStepRunning SystemEventTypeENUM = "WORKFLOW_STEP_RUNNING"
+	// SystemEventTypeWorkflowStepComplete a workflow step completed
+	SystemEventTypeWorkflowStepComplete SystemEventTypeENUM = "WORKFLOW_STEP_COMPLETE"
+	// SystemEventTypeWorkflowStepFailed a workflow step failed
+	SystemEventTypeWorkflowStepFailed SystemEventTypeENUM = "WORKFLOW_STEP_FAILED"
+	// SystemEventTypeWorkflowStepTimedOut a workflow step timed out
+	SystemEventTypeWorkflowStepTimedOut SystemEventTypeENUM = "WORKFLOW_STEP_TIMED_OUT"
+	// SystemEventTypeWorkflowStepCancelling a workflow step is being cancelled
+	SystemEventTypeWorkflowStepCancelling SystemEventTypeENUM = "WORKFLOW_STEP_CANCELLING"
+	// SystemEventTypeWorkflowStepCancelled a workflow step is cancelled
+	SystemEventTypeWorkflowStepCancelled SystemEventTypeENUM = "WORKFLOW_STEP_CANCELLED"
 )
 
 // Values all valid SystemEventTypeENUM values
@@ -47,6 +87,23 @@ func (SystemEventTypeENUM) Values() []SystemEventTypeENUM {
 		SystemEventTypeDeleteTask,
 		SystemEventTypeInvalidTaskIPCMessage,
 		SystemEventTypeEngineFailedTask,
+		SystemEventTypeDefineWorkflow,
+		SystemEventTypeWorkflowRunning,
+		SystemEventTypeWorkflowComplete,
+		SystemEventTypeWorkflowFailed,
+		SystemEventTypeWorkflowTimedOut,
+		SystemEventTypeWorkflowCancelling,
+		SystemEventTypeWorkflowCancelled,
+		SystemEventTypeWorkflowDeadlineUpdate,
+		SystemEventTypeDeleteWorkflow,
+		SystemEventTypeWorkflowStepDefined,
+		SystemEventTypeWorkflowStepPending,
+		SystemEventTypeWorkflowStepRunning,
+		SystemEventTypeWorkflowStepComplete,
+		SystemEventTypeWorkflowStepFailed,
+		SystemEventTypeWorkflowStepTimedOut,
+		SystemEventTypeWorkflowStepCancelling,
+		SystemEventTypeWorkflowStepCancelled,
 	}
 }
 
@@ -121,6 +178,37 @@ func parseSystemEventMetadata(
 			)
 		}
 		return parsed, validate(&parsed)
+	case SystemEventTypeDefineWorkflow,
+		SystemEventTypeWorkflowRunning,
+		SystemEventTypeWorkflowComplete,
+		SystemEventTypeWorkflowFailed,
+		SystemEventTypeWorkflowTimedOut,
+		SystemEventTypeWorkflowCancelling,
+		SystemEventTypeWorkflowCancelled,
+		SystemEventTypeWorkflowDeadlineUpdate,
+		SystemEventTypeDeleteWorkflow:
+		var parsed SystemEventWorkflowEvents
+		if err := json.Unmarshal(metadata, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", eventType), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+	case SystemEventTypeWorkflowStepDefined,
+		SystemEventTypeWorkflowStepPending,
+		SystemEventTypeWorkflowStepRunning,
+		SystemEventTypeWorkflowStepComplete,
+		SystemEventTypeWorkflowStepFailed,
+		SystemEventTypeWorkflowStepTimedOut,
+		SystemEventTypeWorkflowStepCancelling,
+		SystemEventTypeWorkflowStepCancelled:
+		var parsed SystemEventWorkflowStepEvents
+		if err := json.Unmarshal(metadata, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", eventType), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
 	default:
 		return nil, goutils.NewConsistencyError(
 			fmt.Sprintf("unsupported system event type '%s'", eventType), nil, true,
@@ -133,6 +221,27 @@ type SystemEventTaskEvents struct {
 	// TaskID task ID
 	TaskID string `json:"task_id" validate:"required"`
 	// Creator opaque identity of the task's creator; the notification routing key.
+	// Denormalized here so the producer can route from the audit row alone (no joins).
+	Creator string `json:"creator" validate:"required"`
+}
+
+// SystemEventWorkflowEvents workflow related system event
+type SystemEventWorkflowEvents struct {
+	// WorkflowID workflow ID; also the notification subject (subject:workflow:<id>).
+	WorkflowID string `json:"workflow_id" validate:"required"`
+	// Creator opaque identity of the workflow's creator; the notification routing key.
+	// Denormalized here so the producer can route from the audit row alone (no joins).
+	Creator string `json:"creator" validate:"required"`
+}
+
+// SystemEventWorkflowStepEvents workflow step related system event. The event is about the
+// parent workflow (subject:workflow:<workflow_id>), carrying the step ID for detail.
+type SystemEventWorkflowStepEvents struct {
+	// StepID workflow step ID
+	StepID string `json:"step_id" validate:"required"`
+	// WorkflowID parent workflow ID; also the notification subject (subject:workflow:<id>).
+	WorkflowID string `json:"workflow_id" validate:"required"`
+	// Creator opaque identity of the parent workflow's creator; the notification routing key.
 	// Denormalized here so the producer can route from the audit row alone (no joins).
 	Creator string `json:"creator" validate:"required"`
 }

@@ -322,6 +322,78 @@ func (_c *Database_DefineNewTaskRetryExecInstance_Call) RunAndReturn(run func(ct
 	return _c
 }
 
+// DefineNewWorkflow provides a mock function for the type Database
+func (_mock *Database) DefineNewWorkflow(ctx context.Context, workflowSpec models.NewWorkflowParameter, creator string) (models.Workflow, error) {
+	ret := _mock.Called(ctx, workflowSpec, creator)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefineNewWorkflow")
+	}
+
+	var r0 models.Workflow
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.NewWorkflowParameter, string) (models.Workflow, error)); ok {
+		return returnFunc(ctx, workflowSpec, creator)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.NewWorkflowParameter, string) models.Workflow); ok {
+		r0 = returnFunc(ctx, workflowSpec, creator)
+	} else {
+		r0 = ret.Get(0).(models.Workflow)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, models.NewWorkflowParameter, string) error); ok {
+		r1 = returnFunc(ctx, workflowSpec, creator)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_DefineNewWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefineNewWorkflow'
+type Database_DefineNewWorkflow_Call struct {
+	*mock.Call
+}
+
+// DefineNewWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowSpec models.NewWorkflowParameter
+//   - creator string
+func (_e *Database_Expecter) DefineNewWorkflow(ctx interface{}, workflowSpec interface{}, creator interface{}) *Database_DefineNewWorkflow_Call {
+	return &Database_DefineNewWorkflow_Call{Call: _e.mock.On("DefineNewWorkflow", ctx, workflowSpec, creator)}
+}
+
+func (_c *Database_DefineNewWorkflow_Call) Run(run func(ctx context.Context, workflowSpec models.NewWorkflowParameter, creator string)) *Database_DefineNewWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 models.NewWorkflowParameter
+		if args[1] != nil {
+			arg1 = args[1].(models.NewWorkflowParameter)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_DefineNewWorkflow_Call) Return(workflow models.Workflow, err error) *Database_DefineNewWorkflow_Call {
+	_c.Call.Return(workflow, err)
+	return _c
+}
+
+func (_c *Database_DefineNewWorkflow_Call) RunAndReturn(run func(ctx context.Context, workflowSpec models.NewWorkflowParameter, creator string) (models.Workflow, error)) *Database_DefineNewWorkflow_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteTask provides a mock function for the type Database
 func (_mock *Database) DeleteTask(ctx context.Context, taskID string) error {
 	ret := _mock.Called(ctx, taskID)
@@ -375,6 +447,63 @@ func (_c *Database_DeleteTask_Call) Return(err error) *Database_DeleteTask_Call 
 }
 
 func (_c *Database_DeleteTask_Call) RunAndReturn(run func(ctx context.Context, taskID string) error) *Database_DeleteTask_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteWorkflow provides a mock function for the type Database
+func (_mock *Database) DeleteWorkflow(ctx context.Context, workflowID string) error {
+	ret := _mock.Called(ctx, workflowID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteWorkflow")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, workflowID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_DeleteWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteWorkflow'
+type Database_DeleteWorkflow_Call struct {
+	*mock.Call
+}
+
+// DeleteWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+func (_e *Database_Expecter) DeleteWorkflow(ctx interface{}, workflowID interface{}) *Database_DeleteWorkflow_Call {
+	return &Database_DeleteWorkflow_Call{Call: _e.mock.On("DeleteWorkflow", ctx, workflowID)}
+}
+
+func (_c *Database_DeleteWorkflow_Call) Run(run func(ctx context.Context, workflowID string)) *Database_DeleteWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_DeleteWorkflow_Call) Return(err error) *Database_DeleteWorkflow_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_DeleteWorkflow_Call) RunAndReturn(run func(ctx context.Context, workflowID string) error) *Database_DeleteWorkflow_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -507,6 +636,347 @@ func (_c *Database_GetTaskExecution_Call) Return(taskExecution models.TaskExecut
 }
 
 func (_c *Database_GetTaskExecution_Call) RunAndReturn(run func(ctx context.Context, instanceID string) (models.TaskExecution, error)) *Database_GetTaskExecution_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetWorkflow provides a mock function for the type Database
+func (_mock *Database) GetWorkflow(ctx context.Context, workflowID string) (models.Workflow, error) {
+	ret := _mock.Called(ctx, workflowID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetWorkflow")
+	}
+
+	var r0 models.Workflow
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (models.Workflow, error)); ok {
+		return returnFunc(ctx, workflowID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) models.Workflow); ok {
+		r0 = returnFunc(ctx, workflowID)
+	} else {
+		r0 = ret.Get(0).(models.Workflow)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, workflowID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_GetWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetWorkflow'
+type Database_GetWorkflow_Call struct {
+	*mock.Call
+}
+
+// GetWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+func (_e *Database_Expecter) GetWorkflow(ctx interface{}, workflowID interface{}) *Database_GetWorkflow_Call {
+	return &Database_GetWorkflow_Call{Call: _e.mock.On("GetWorkflow", ctx, workflowID)}
+}
+
+func (_c *Database_GetWorkflow_Call) Run(run func(ctx context.Context, workflowID string)) *Database_GetWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_GetWorkflow_Call) Return(workflow models.Workflow, err error) *Database_GetWorkflow_Call {
+	_c.Call.Return(workflow, err)
+	return _c
+}
+
+func (_c *Database_GetWorkflow_Call) RunAndReturn(run func(ctx context.Context, workflowID string) (models.Workflow, error)) *Database_GetWorkflow_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetWorkflowStep provides a mock function for the type Database
+func (_mock *Database) GetWorkflowStep(ctx context.Context, stepID string) (models.WorkflowStep, error) {
+	ret := _mock.Called(ctx, stepID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetWorkflowStep")
+	}
+
+	var r0 models.WorkflowStep
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (models.WorkflowStep, error)); ok {
+		return returnFunc(ctx, stepID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) models.WorkflowStep); ok {
+		r0 = returnFunc(ctx, stepID)
+	} else {
+		r0 = ret.Get(0).(models.WorkflowStep)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, stepID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_GetWorkflowStep_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetWorkflowStep'
+type Database_GetWorkflowStep_Call struct {
+	*mock.Call
+}
+
+// GetWorkflowStep is a helper method to define mock.On call
+//   - ctx context.Context
+//   - stepID string
+func (_e *Database_Expecter) GetWorkflowStep(ctx interface{}, stepID interface{}) *Database_GetWorkflowStep_Call {
+	return &Database_GetWorkflowStep_Call{Call: _e.mock.On("GetWorkflowStep", ctx, stepID)}
+}
+
+func (_c *Database_GetWorkflowStep_Call) Run(run func(ctx context.Context, stepID string)) *Database_GetWorkflowStep_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_GetWorkflowStep_Call) Return(workflowStep models.WorkflowStep, err error) *Database_GetWorkflowStep_Call {
+	_c.Call.Return(workflowStep, err)
+	return _c
+}
+
+func (_c *Database_GetWorkflowStep_Call) RunAndReturn(run func(ctx context.Context, stepID string) (models.WorkflowStep, error)) *Database_GetWorkflowStep_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetWorkflowStepAndExecutorTask provides a mock function for the type Database
+func (_mock *Database) GetWorkflowStepAndExecutorTask(cxt context.Context, stepID string, activeTask bool) (models.WorkflowStep, []models.Task, error) {
+	ret := _mock.Called(cxt, stepID, activeTask)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetWorkflowStepAndExecutorTask")
+	}
+
+	var r0 models.WorkflowStep
+	var r1 []models.Task
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (models.WorkflowStep, []models.Task, error)); ok {
+		return returnFunc(cxt, stepID, activeTask)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) models.WorkflowStep); ok {
+		r0 = returnFunc(cxt, stepID, activeTask)
+	} else {
+		r0 = ret.Get(0).(models.WorkflowStep)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) []models.Task); ok {
+		r1 = returnFunc(cxt, stepID, activeTask)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]models.Task)
+		}
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, bool) error); ok {
+		r2 = returnFunc(cxt, stepID, activeTask)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// Database_GetWorkflowStepAndExecutorTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetWorkflowStepAndExecutorTask'
+type Database_GetWorkflowStepAndExecutorTask_Call struct {
+	*mock.Call
+}
+
+// GetWorkflowStepAndExecutorTask is a helper method to define mock.On call
+//   - cxt context.Context
+//   - stepID string
+//   - activeTask bool
+func (_e *Database_Expecter) GetWorkflowStepAndExecutorTask(cxt interface{}, stepID interface{}, activeTask interface{}) *Database_GetWorkflowStepAndExecutorTask_Call {
+	return &Database_GetWorkflowStepAndExecutorTask_Call{Call: _e.mock.On("GetWorkflowStepAndExecutorTask", cxt, stepID, activeTask)}
+}
+
+func (_c *Database_GetWorkflowStepAndExecutorTask_Call) Run(run func(cxt context.Context, stepID string, activeTask bool)) *Database_GetWorkflowStepAndExecutorTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_GetWorkflowStepAndExecutorTask_Call) Return(workflowStep models.WorkflowStep, tasks []models.Task, err error) *Database_GetWorkflowStepAndExecutorTask_Call {
+	_c.Call.Return(workflowStep, tasks, err)
+	return _c
+}
+
+func (_c *Database_GetWorkflowStepAndExecutorTask_Call) RunAndReturn(run func(cxt context.Context, stepID string, activeTask bool) (models.WorkflowStep, []models.Task, error)) *Database_GetWorkflowStepAndExecutorTask_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetWorkflowStepProcessedByTask provides a mock function for the type Database
+func (_mock *Database) GetWorkflowStepProcessedByTask(ctx context.Context, taskID string) (models.WorkflowStep, error) {
+	ret := _mock.Called(ctx, taskID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetWorkflowStepProcessedByTask")
+	}
+
+	var r0 models.WorkflowStep
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (models.WorkflowStep, error)); ok {
+		return returnFunc(ctx, taskID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) models.WorkflowStep); ok {
+		r0 = returnFunc(ctx, taskID)
+	} else {
+		r0 = ret.Get(0).(models.WorkflowStep)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, taskID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_GetWorkflowStepProcessedByTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetWorkflowStepProcessedByTask'
+type Database_GetWorkflowStepProcessedByTask_Call struct {
+	*mock.Call
+}
+
+// GetWorkflowStepProcessedByTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - taskID string
+func (_e *Database_Expecter) GetWorkflowStepProcessedByTask(ctx interface{}, taskID interface{}) *Database_GetWorkflowStepProcessedByTask_Call {
+	return &Database_GetWorkflowStepProcessedByTask_Call{Call: _e.mock.On("GetWorkflowStepProcessedByTask", ctx, taskID)}
+}
+
+func (_c *Database_GetWorkflowStepProcessedByTask_Call) Run(run func(ctx context.Context, taskID string)) *Database_GetWorkflowStepProcessedByTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_GetWorkflowStepProcessedByTask_Call) Return(workflowStep models.WorkflowStep, err error) *Database_GetWorkflowStepProcessedByTask_Call {
+	_c.Call.Return(workflowStep, err)
+	return _c
+}
+
+func (_c *Database_GetWorkflowStepProcessedByTask_Call) RunAndReturn(run func(ctx context.Context, taskID string) (models.WorkflowStep, error)) *Database_GetWorkflowStepProcessedByTask_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LinkWorkflowStepWithExecutorTask provides a mock function for the type Database
+func (_mock *Database) LinkWorkflowStepWithExecutorTask(ctx context.Context, stepID string, taskID string) error {
+	ret := _mock.Called(ctx, stepID, taskID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LinkWorkflowStepWithExecutorTask")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, stepID, taskID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_LinkWorkflowStepWithExecutorTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LinkWorkflowStepWithExecutorTask'
+type Database_LinkWorkflowStepWithExecutorTask_Call struct {
+	*mock.Call
+}
+
+// LinkWorkflowStepWithExecutorTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - stepID string
+//   - taskID string
+func (_e *Database_Expecter) LinkWorkflowStepWithExecutorTask(ctx interface{}, stepID interface{}, taskID interface{}) *Database_LinkWorkflowStepWithExecutorTask_Call {
+	return &Database_LinkWorkflowStepWithExecutorTask_Call{Call: _e.mock.On("LinkWorkflowStepWithExecutorTask", ctx, stepID, taskID)}
+}
+
+func (_c *Database_LinkWorkflowStepWithExecutorTask_Call) Run(run func(ctx context.Context, stepID string, taskID string)) *Database_LinkWorkflowStepWithExecutorTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_LinkWorkflowStepWithExecutorTask_Call) Return(err error) *Database_LinkWorkflowStepWithExecutorTask_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_LinkWorkflowStepWithExecutorTask_Call) RunAndReturn(run func(ctx context.Context, stepID string, taskID string) error) *Database_LinkWorkflowStepWithExecutorTask_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -785,6 +1255,210 @@ func (_c *Database_ListTasks_Call) Return(tasks []models.Task, err error) *Datab
 }
 
 func (_c *Database_ListTasks_Call) RunAndReturn(run func(ctx context.Context, filters db.TaskQueryFilter) ([]models.Task, error)) *Database_ListTasks_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListWorkflowSteps provides a mock function for the type Database
+func (_mock *Database) ListWorkflowSteps(ctx context.Context, workflowID string) ([]models.WorkflowStep, error) {
+	ret := _mock.Called(ctx, workflowID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListWorkflowSteps")
+	}
+
+	var r0 []models.WorkflowStep
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]models.WorkflowStep, error)); ok {
+		return returnFunc(ctx, workflowID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []models.WorkflowStep); ok {
+		r0 = returnFunc(ctx, workflowID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]models.WorkflowStep)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, workflowID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_ListWorkflowSteps_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListWorkflowSteps'
+type Database_ListWorkflowSteps_Call struct {
+	*mock.Call
+}
+
+// ListWorkflowSteps is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+func (_e *Database_Expecter) ListWorkflowSteps(ctx interface{}, workflowID interface{}) *Database_ListWorkflowSteps_Call {
+	return &Database_ListWorkflowSteps_Call{Call: _e.mock.On("ListWorkflowSteps", ctx, workflowID)}
+}
+
+func (_c *Database_ListWorkflowSteps_Call) Run(run func(ctx context.Context, workflowID string)) *Database_ListWorkflowSteps_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_ListWorkflowSteps_Call) Return(workflowSteps []models.WorkflowStep, err error) *Database_ListWorkflowSteps_Call {
+	_c.Call.Return(workflowSteps, err)
+	return _c
+}
+
+func (_c *Database_ListWorkflowSteps_Call) RunAndReturn(run func(ctx context.Context, workflowID string) ([]models.WorkflowStep, error)) *Database_ListWorkflowSteps_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListWorkflowStepsReadyToRun provides a mock function for the type Database
+func (_mock *Database) ListWorkflowStepsReadyToRun(ctx context.Context, workflowID string) ([]models.WorkflowStep, error) {
+	ret := _mock.Called(ctx, workflowID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListWorkflowStepsReadyToRun")
+	}
+
+	var r0 []models.WorkflowStep
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]models.WorkflowStep, error)); ok {
+		return returnFunc(ctx, workflowID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []models.WorkflowStep); ok {
+		r0 = returnFunc(ctx, workflowID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]models.WorkflowStep)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, workflowID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_ListWorkflowStepsReadyToRun_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListWorkflowStepsReadyToRun'
+type Database_ListWorkflowStepsReadyToRun_Call struct {
+	*mock.Call
+}
+
+// ListWorkflowStepsReadyToRun is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+func (_e *Database_Expecter) ListWorkflowStepsReadyToRun(ctx interface{}, workflowID interface{}) *Database_ListWorkflowStepsReadyToRun_Call {
+	return &Database_ListWorkflowStepsReadyToRun_Call{Call: _e.mock.On("ListWorkflowStepsReadyToRun", ctx, workflowID)}
+}
+
+func (_c *Database_ListWorkflowStepsReadyToRun_Call) Run(run func(ctx context.Context, workflowID string)) *Database_ListWorkflowStepsReadyToRun_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_ListWorkflowStepsReadyToRun_Call) Return(workflowSteps []models.WorkflowStep, err error) *Database_ListWorkflowStepsReadyToRun_Call {
+	_c.Call.Return(workflowSteps, err)
+	return _c
+}
+
+func (_c *Database_ListWorkflowStepsReadyToRun_Call) RunAndReturn(run func(ctx context.Context, workflowID string) ([]models.WorkflowStep, error)) *Database_ListWorkflowStepsReadyToRun_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListWorkflows provides a mock function for the type Database
+func (_mock *Database) ListWorkflows(ctx context.Context, filters db.WorkflowQueryFilter) ([]models.Workflow, error) {
+	ret := _mock.Called(ctx, filters)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListWorkflows")
+	}
+
+	var r0 []models.Workflow
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, db.WorkflowQueryFilter) ([]models.Workflow, error)); ok {
+		return returnFunc(ctx, filters)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, db.WorkflowQueryFilter) []models.Workflow); ok {
+		r0 = returnFunc(ctx, filters)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]models.Workflow)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, db.WorkflowQueryFilter) error); ok {
+		r1 = returnFunc(ctx, filters)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_ListWorkflows_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListWorkflows'
+type Database_ListWorkflows_Call struct {
+	*mock.Call
+}
+
+// ListWorkflows is a helper method to define mock.On call
+//   - ctx context.Context
+//   - filters db.WorkflowQueryFilter
+func (_e *Database_Expecter) ListWorkflows(ctx interface{}, filters interface{}) *Database_ListWorkflows_Call {
+	return &Database_ListWorkflows_Call{Call: _e.mock.On("ListWorkflows", ctx, filters)}
+}
+
+func (_c *Database_ListWorkflows_Call) Run(run func(ctx context.Context, filters db.WorkflowQueryFilter)) *Database_ListWorkflows_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 db.WorkflowQueryFilter
+		if args[1] != nil {
+			arg1 = args[1].(db.WorkflowQueryFilter)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_ListWorkflows_Call) Return(workflows []models.Workflow, err error) *Database_ListWorkflows_Call {
+	_c.Call.Return(workflows, err)
+	return _c
+}
+
+func (_c *Database_ListWorkflows_Call) RunAndReturn(run func(ctx context.Context, filters db.WorkflowQueryFilter) ([]models.Workflow, error)) *Database_ListWorkflows_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1629,6 +2303,999 @@ func (_c *Database_MarkTaskTimedOut_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// MarkWorkflowCancelled provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowCancelled(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowCancelled")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowCancelled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowCancelled'
+type Database_MarkWorkflowCancelled_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowCancelled is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowCancelled(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowCancelled_Call {
+	return &Database_MarkWorkflowCancelled_Call{Call: _e.mock.On("MarkWorkflowCancelled", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowCancelled_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowCancelled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowCancelled_Call) Return(err error) *Database_MarkWorkflowCancelled_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowCancelled_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowCancelled_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowCancelling provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowCancelling(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowCancelling")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowCancelling_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowCancelling'
+type Database_MarkWorkflowCancelling_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowCancelling is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowCancelling(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowCancelling_Call {
+	return &Database_MarkWorkflowCancelling_Call{Call: _e.mock.On("MarkWorkflowCancelling", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowCancelling_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowCancelling_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowCancelling_Call) Return(err error) *Database_MarkWorkflowCancelling_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowCancelling_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowCancelling_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowComplete provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowComplete(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowComplete")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowComplete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowComplete'
+type Database_MarkWorkflowComplete_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowComplete is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowComplete(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowComplete_Call {
+	return &Database_MarkWorkflowComplete_Call{Call: _e.mock.On("MarkWorkflowComplete", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowComplete_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowComplete_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowComplete_Call) Return(err error) *Database_MarkWorkflowComplete_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowComplete_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowComplete_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowFailed provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowFailed(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowFailed")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowFailed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowFailed'
+type Database_MarkWorkflowFailed_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowFailed is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowFailed(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowFailed_Call {
+	return &Database_MarkWorkflowFailed_Call{Call: _e.mock.On("MarkWorkflowFailed", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowFailed_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowFailed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowFailed_Call) Return(err error) *Database_MarkWorkflowFailed_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowFailed_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowFailed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowPending provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowPending(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowPending")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowPending_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowPending'
+type Database_MarkWorkflowPending_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowPending is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowPending(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowPending_Call {
+	return &Database_MarkWorkflowPending_Call{Call: _e.mock.On("MarkWorkflowPending", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowPending_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowPending_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowPending_Call) Return(err error) *Database_MarkWorkflowPending_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowPending_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowPending_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowRunning provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowRunning(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowRunning")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowRunning_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowRunning'
+type Database_MarkWorkflowRunning_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowRunning is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowRunning(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowRunning_Call {
+	return &Database_MarkWorkflowRunning_Call{Call: _e.mock.On("MarkWorkflowRunning", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowRunning_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowRunning_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowRunning_Call) Return(err error) *Database_MarkWorkflowRunning_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowRunning_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowRunning_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepCancelled provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepCancelled(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepCancelled")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepCancelled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepCancelled'
+type Database_MarkWorkflowStepCancelled_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepCancelled is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepCancelled(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepCancelled_Call {
+	return &Database_MarkWorkflowStepCancelled_Call{Call: _e.mock.On("MarkWorkflowStepCancelled", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepCancelled_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepCancelled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepCancelled_Call) Return(err error) *Database_MarkWorkflowStepCancelled_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepCancelled_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepCancelled_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepCancelling provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepCancelling(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepCancelling")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepCancelling_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepCancelling'
+type Database_MarkWorkflowStepCancelling_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepCancelling is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepCancelling(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepCancelling_Call {
+	return &Database_MarkWorkflowStepCancelling_Call{Call: _e.mock.On("MarkWorkflowStepCancelling", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepCancelling_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepCancelling_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepCancelling_Call) Return(err error) *Database_MarkWorkflowStepCancelling_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepCancelling_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepCancelling_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepComplete provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepComplete(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepComplete")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepComplete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepComplete'
+type Database_MarkWorkflowStepComplete_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepComplete is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepComplete(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepComplete_Call {
+	return &Database_MarkWorkflowStepComplete_Call{Call: _e.mock.On("MarkWorkflowStepComplete", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepComplete_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepComplete_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepComplete_Call) Return(err error) *Database_MarkWorkflowStepComplete_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepComplete_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepComplete_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepDefined provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepDefined(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepDefined")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepDefined_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepDefined'
+type Database_MarkWorkflowStepDefined_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepDefined is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepDefined(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepDefined_Call {
+	return &Database_MarkWorkflowStepDefined_Call{Call: _e.mock.On("MarkWorkflowStepDefined", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepDefined_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepDefined_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepDefined_Call) Return(err error) *Database_MarkWorkflowStepDefined_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepDefined_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepDefined_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepFailed provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepFailed(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepFailed")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepFailed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepFailed'
+type Database_MarkWorkflowStepFailed_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepFailed is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepFailed(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepFailed_Call {
+	return &Database_MarkWorkflowStepFailed_Call{Call: _e.mock.On("MarkWorkflowStepFailed", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepFailed_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepFailed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepFailed_Call) Return(err error) *Database_MarkWorkflowStepFailed_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepFailed_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepFailed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepPending provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepPending(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepPending")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepPending_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepPending'
+type Database_MarkWorkflowStepPending_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepPending is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepPending(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepPending_Call {
+	return &Database_MarkWorkflowStepPending_Call{Call: _e.mock.On("MarkWorkflowStepPending", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepPending_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepPending_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepPending_Call) Return(err error) *Database_MarkWorkflowStepPending_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepPending_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepPending_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepRunning provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepRunning(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepRunning")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepRunning_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepRunning'
+type Database_MarkWorkflowStepRunning_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepRunning is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepRunning(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepRunning_Call {
+	return &Database_MarkWorkflowStepRunning_Call{Call: _e.mock.On("MarkWorkflowStepRunning", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepRunning_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepRunning_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepRunning_Call) Return(err error) *Database_MarkWorkflowStepRunning_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepRunning_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepRunning_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowStepTimedOut provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowStepTimedOut(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, stepIDs, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowStepTimedOut")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, stepIDs, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowStepTimedOut_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowStepTimedOut'
+type Database_MarkWorkflowStepTimedOut_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowStepTimedOut is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - stepIDs []string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowStepTimedOut(ctx interface{}, workflowID interface{}, stepIDs interface{}, timestamp interface{}) *Database_MarkWorkflowStepTimedOut_Call {
+	return &Database_MarkWorkflowStepTimedOut_Call{Call: _e.mock.On("MarkWorkflowStepTimedOut", ctx, workflowID, stepIDs, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowStepTimedOut_Call) Run(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time)) *Database_MarkWorkflowStepTimedOut_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepTimedOut_Call) Return(err error) *Database_MarkWorkflowStepTimedOut_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowStepTimedOut_Call) RunAndReturn(run func(ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time) error) *Database_MarkWorkflowStepTimedOut_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkWorkflowTimedOut provides a mock function for the type Database
+func (_mock *Database) MarkWorkflowTimedOut(ctx context.Context, workflowID string, timestamp time.Time) error {
+	ret := _mock.Called(ctx, workflowID, timestamp)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkWorkflowTimedOut")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, timestamp)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkWorkflowTimedOut_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkWorkflowTimedOut'
+type Database_MarkWorkflowTimedOut_Call struct {
+	*mock.Call
+}
+
+// MarkWorkflowTimedOut is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - timestamp time.Time
+func (_e *Database_Expecter) MarkWorkflowTimedOut(ctx interface{}, workflowID interface{}, timestamp interface{}) *Database_MarkWorkflowTimedOut_Call {
+	return &Database_MarkWorkflowTimedOut_Call{Call: _e.mock.On("MarkWorkflowTimedOut", ctx, workflowID, timestamp)}
+}
+
+func (_c *Database_MarkWorkflowTimedOut_Call) Run(run func(ctx context.Context, workflowID string, timestamp time.Time)) *Database_MarkWorkflowTimedOut_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkWorkflowTimedOut_Call) Return(err error) *Database_MarkWorkflowTimedOut_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkWorkflowTimedOut_Call) RunAndReturn(run func(ctx context.Context, workflowID string, timestamp time.Time) error) *Database_MarkWorkflowTimedOut_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // RecordInvalidTaskIPCMessage provides a mock function for the type Database
 func (_mock *Database) RecordInvalidTaskIPCMessage(ctx context.Context, receiver string, rawMessage string, reason string) error {
 	ret := _mock.Called(ctx, receiver, rawMessage, reason)
@@ -1826,6 +3493,69 @@ func (_c *Database_UpdateTaskDeadline_Call) Return(err error) *Database_UpdateTa
 }
 
 func (_c *Database_UpdateTaskDeadline_Call) RunAndReturn(run func(ctx context.Context, taskID string, deadline time.Time) error) *Database_UpdateTaskDeadline_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateWorkflowDeadline provides a mock function for the type Database
+func (_mock *Database) UpdateWorkflowDeadline(ctx context.Context, workflowID string, deadline time.Time) error {
+	ret := _mock.Called(ctx, workflowID, deadline)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateWorkflowDeadline")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) error); ok {
+		r0 = returnFunc(ctx, workflowID, deadline)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_UpdateWorkflowDeadline_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateWorkflowDeadline'
+type Database_UpdateWorkflowDeadline_Call struct {
+	*mock.Call
+}
+
+// UpdateWorkflowDeadline is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - deadline time.Time
+func (_e *Database_Expecter) UpdateWorkflowDeadline(ctx interface{}, workflowID interface{}, deadline interface{}) *Database_UpdateWorkflowDeadline_Call {
+	return &Database_UpdateWorkflowDeadline_Call{Call: _e.mock.On("UpdateWorkflowDeadline", ctx, workflowID, deadline)}
+}
+
+func (_c *Database_UpdateWorkflowDeadline_Call) Run(run func(ctx context.Context, workflowID string, deadline time.Time)) *Database_UpdateWorkflowDeadline_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_UpdateWorkflowDeadline_Call) Return(err error) *Database_UpdateWorkflowDeadline_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_UpdateWorkflowDeadline_Call) RunAndReturn(run func(ctx context.Context, workflowID string, deadline time.Time) error) *Database_UpdateWorkflowDeadline_Call {
 	_c.Call.Return(run)
 	return _c
 }

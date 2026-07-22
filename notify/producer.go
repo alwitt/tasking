@@ -318,6 +318,10 @@ func (p *producerImpl) deriveCreator(event models.SystemEventAudit) (string, err
 		return meta.Creator, nil
 	case models.SystemEventEngineFailedTask:
 		return meta.Creator, nil
+	case models.SystemEventWorkflowEvents:
+		return meta.Creator, nil
+	case models.SystemEventWorkflowStepEvents:
+		return meta.Creator, nil
 	default:
 		return "", nil
 	}
@@ -340,6 +344,11 @@ func (p *producerImpl) deriveSubject(event models.SystemEventAudit) (string, str
 		return "task", meta.TaskID, true
 	case models.SystemEventEngineFailedTask:
 		return "task", meta.TaskID, true
+	case models.SystemEventWorkflowEvents:
+		return "workflow", meta.WorkflowID, true
+	case models.SystemEventWorkflowStepEvents:
+		// A step event is about its parent workflow (subject:workflow:<id>), per DESIGN §7.
+		return "workflow", meta.WorkflowID, true
 	default:
 		return "", "", false
 	}

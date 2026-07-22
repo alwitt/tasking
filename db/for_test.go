@@ -13,6 +13,10 @@ func DefineTables(_ context.Context, db *gorm.DB) error {
 	return db.AutoMigrate(
 		&taskEntry{},
 		&taskExecutionEntry{},
+		&workflowEntry{},
+		&workflowStepEntry{},
+		&workflowStepDependency{},
+		&workflowStepRunnerTask{},
 		&systemEventAuditEntry{},
 	)
 }

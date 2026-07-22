@@ -49,5 +49,17 @@ func RegisterWithValidator(v *validator.Validate) error {
 		return err
 	}
 
+	if err := goutils.RegisterENUMInValidator(
+		v, "workflow_state", goutils.ValidateStringENUM[WorkflowStateENUM](),
+	); err != nil {
+		return err
+	}
+
+	if err := goutils.RegisterENUMInValidator(
+		v, "workflow_step_state", goutils.ValidateStringENUM[WorkflowStepStateENUM](),
+	); err != nil {
+		return err
+	}
+
 	return goutils.RegisterWithValidator(v)
 }

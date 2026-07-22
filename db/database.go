@@ -84,6 +84,19 @@ type NewTaskParameter struct {
 	Deadline *time.Time
 }
 
+// WorkflowQueryFilter query filter conditions to list workflow
+type WorkflowQueryFilter struct {
+	CommonListEntryQueryFilter
+	// TargetIDs target specific set of workflows to query for
+	TargetIDs []string
+	// TargetNames target specific set of workflow names to query for
+	TargetNames []string
+	// TargetStates target workflow states to query for
+	TargetStates []models.WorkflowStateENUM `validate:"omitempty,dive,workflow_state"`
+	// TargetDeadline workflows with a deadline at or before this timestamp
+	TargetDeadline *time.Time
+}
+
 // Database the database handle to interacting with the data base.
 //
 // All methods must be invoked within a transaction. A `Database` instance can only be
@@ -372,6 +385,303 @@ type Database interface {
 	MarkTaskExecCancelled(
 		ctx context.Context, instanceID string, cancelMsg string, terminatedAt time.Time,
 	) error
+
+	// ------------------------------------------------------------------------------------
+	// Workflow
+
+	/*
+		DefineNewWorkflow define a new workflow
+
+			@param ctx context.Context - execution context
+			@param workflowSpec models.NewWorkflowParameter - the workflow specification
+			@param creator string - the entity defining the workflow
+			@returns new workflow entry
+	*/
+	DefineNewWorkflow(
+		ctx context.Context, workflowSpec models.NewWorkflowParameter, creator string,
+	) (models.Workflow, error)
+
+	/*
+		GetWorkflow fetch a workflow entry
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@returns workflow entry
+	*/
+	GetWorkflow(ctx context.Context, workflowID string) (models.Workflow, error)
+
+	/*
+		MarkWorkflowPending mark workflow is pending execution
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowPending(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowRunning mark workflow is running
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowRunning(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowComplete mark workflow is complete
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowComplete(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowFailed mark workflow has failed
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowFailed(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowTimedOut mark workflow has timed out
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowTimedOut(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowCancelling mark workflow is being cancelled
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowCancelling(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		MarkWorkflowCancelled mark workflow is cancelled
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowCancelled(ctx context.Context, workflowID string, timestamp time.Time) error
+
+	/*
+		ListWorkflows list workflows
+
+			@param ctx context.Context - execution context
+			@param filters WorkflowQueryFilter - query filtering conditions
+			@returns list of workflows
+	*/
+	ListWorkflows(ctx context.Context, filters WorkflowQueryFilter) ([]models.Workflow, error)
+
+	/*
+		DeleteWorkflow delete workflow entry
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+	*/
+	DeleteWorkflow(ctx context.Context, workflowID string) error
+
+	/*
+		UpdateWorkflowDeadline set a new deadline for a workflow and re-sync it onto the workflow's
+		steps.
+
+		Step deadlines are derived from (and mirror) the workflow deadline, so the new deadline is
+		applied to every step which has not yet reached a terminal state (COMPLETE or CANCELLED). A
+		terminal step's deadline is left untouched.
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@param deadline time.Time - the new deadline
+	*/
+	UpdateWorkflowDeadline(ctx context.Context, workflowID string, deadline time.Time) error
+
+	// ------------------------------------------------------------------------------------
+	// Workflow Steps
+
+	/*
+		GetWorkflowStep fetch a workflow step entry
+
+			@param ctx context.Context - execution context
+			@param stepID string - workflow step ID
+			@returns workflow step entry
+	*/
+	GetWorkflowStep(ctx context.Context, stepID string) (models.WorkflowStep, error)
+
+	/*
+		ListWorkflowSteps list the workflow steps associated with a workflow.
+
+		The steps are returned after topological sort and in alphabetical order for nodes at the
+		same depth.
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@returns list of workflow steps
+	*/
+	ListWorkflowSteps(ctx context.Context, workflowID string) ([]models.WorkflowStep, error)
+
+	/*
+		ListWorkflowStepsReadyToRun list the workflow steps of a workflow which are ready to run.
+
+		A step is ready to run when it is in the DEFINED state and all of its
+		parent steps (if any) have completed.
+
+		This considers only step-level readiness; it does NOT gate on the parent workflow's state.
+		The caller (scheduler) is responsible for the soft-stop / hard-stop policy — e.g. not
+		dispatching startable steps of a TIMED_OUT / CANCELLING workflow (see the workflow DESIGN's
+		Process Workflow handler).
+
+			@param ctx context.Context - execution context
+			@param workflowID string - workflow ID
+			@returns list of workflow steps ready to run
+	*/
+	ListWorkflowStepsReadyToRun(
+		ctx context.Context, workflowID string,
+	) ([]models.WorkflowStep, error)
+
+	/*
+		MarkWorkflowStepDefined revert a group of workflow steps to DEFINED, i.e. revive them.
+
+		Only FAILED / TIMED_OUT steps may transition to DEFINED. Each reverted step is flagged as
+		user-restarted.
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepDefined(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepPending mark a group of workflow steps are pending execution
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepPending(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepRunning mark a group of workflow steps are running
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepRunning(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepComplete mark a group of workflow steps are complete
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepComplete(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepFailed mark a group of workflow steps have failed
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepFailed(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepTimedOut mark a group of workflow steps have timed out
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepTimedOut(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepCancelling mark a group of workflow steps are being cancelled
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepCancelling(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	/*
+		MarkWorkflowStepCancelled mark a group of workflow steps are cancelled
+
+			@param ctx context.Context - execution context
+			@param workflowID string - the parent workflow ID
+			@param stepIDs []string - the workflow step IDs
+			@param timestamp time.Time - when the state change occurred
+	*/
+	MarkWorkflowStepCancelled(
+		ctx context.Context, workflowID string, stepIDs []string, timestamp time.Time,
+	) error
+
+	// ------------------------------------------------------------------------------------
+	// Workflow Steps <=> Executor Task Linkage
+
+	/*
+		LinkWorkflowStepWithExecutorTask record that a task worked on a workflow step.
+
+		A step may be linked to multiple tasks over its lifetime (its first run plus each
+		user-initiated revive); each task executes exactly one step.
+
+			@param ctx context.Context - execution context
+			@param stepID string - the workflow step ID
+			@param taskID string - the ID of the task which worked on the step
+	*/
+	LinkWorkflowStepWithExecutorTask(ctx context.Context, stepID string, taskID string) error
+
+	/*
+		GetWorkflowStepAndExecutorTask fetch a workflow step along with the tasks which worked on it.
+
+			@param ctx context.Context - execution context
+			@param stepID string - the workflow step ID
+			@param activeTask bool - when true, only return live (non-terminal) tasks, i.e. tasks in
+			the PENDING or ACTIVE state
+			@returns the workflow step, and the tasks linked to it
+	*/
+	GetWorkflowStepAndExecutorTask(
+		cxt context.Context, stepID string, activeTask bool,
+	) (models.WorkflowStep, []models.Task, error)
+
+	/*
+		GetWorkflowStepProcessedByTask fetch the workflow step a task worked on, if any.
+
+			@param ctx context.Context - execution context
+			@param taskID string - the task ID
+			@returns the workflow step linked to the task
+	*/
+	GetWorkflowStepProcessedByTask(ctx context.Context, taskID string) (models.WorkflowStep, error)
 }
 
 // databaseImpl implements Database

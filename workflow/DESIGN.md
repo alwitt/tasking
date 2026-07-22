@@ -85,7 +85,7 @@ DEFINED ──▶ PENDING ──▶ RUNNING ──▶ COMPLETE
    │                                       │
    └── (user revive, via workflow: sets user_restarted, reverts to DEFINED)
 RUNNING ──▶ CANCELLING ──▶ CANCELLED       (a RUNNING step has a task to drain)
-DEFINED / PENDING ──▶ CANCELLED            (nothing in-flight; skips CANCELLING)
+DEFINED / PENDING / FAILED / TIMED_OUT ──▶ CANCELLED   (nothing in-flight; skips CANCELLING)
 ```
 
 There is **one** pending state (`PENDING`) and **one** executing state (`RUNNING`), on both
@@ -497,9 +497,11 @@ Periodic recovery / liveness sweep. See [Crash Recovery](#crash-recovery).
 **A `FAILED`/`TIMED_OUT` *step* is deliberately dual-natured** — the single most confusing
 point in the model, so stated once here explicitly:
 
-- It is **terminal for settle, cancel, and dispatch purposes**: it counts as "done draining"
+- It is **terminal for settle and dispatch purposes**: it counts as "done draining"
   (it does not keep a workflow from settling — see ["Settled"](#settled-and-completion)),
-  Cancellation leaves it as-is, and it never blocks or is blocked by new dispatch.
+  and it never blocks or is blocked by new dispatch. For **cancel** it has nothing in-flight to
+  drain, so Cancellation moves it straight to `CANCELLED` (skipping `CANCELLING`), alongside
+  `DEFINED`/`PENDING` steps.
 - It is **non-terminal for completion and revive purposes**: it prevents the workflow from
   ever reaching `COMPLETE` (completion requires *every* step `COMPLETE`), and it is the *only*
   kind of step a [Revive](#revive-failed-workflow) reverts to `DEFINED`.
@@ -634,18 +636,18 @@ Cancel Workflow(workflow):
         if state == RUNNING:
             request task engine cancel the step's task (via task client)
             mark step CANCELLING
-        else if state in {DEFINED, PENDING}:
+        else if state in {DEFINED, PENDING, FAILED, TIMED_OUT}:
             mark step CANCELLED           # nothing in-flight to wait on
-        # COMPLETE / FAILED / TIMED_OUT / CANCELLED: leave as-is
+        # COMPLETE / CANCELLED: leave as-is
     if no step is in {RUNNING, CANCELLING}:
         mark workflow CANCELLED           # settled immediately; nothing was in-flight
 ```
 
 The final `{RUNNING, CANCELLING}` check is the general
 [**settled** predicate](#settled-and-completion) specialized to this exact point: the loop
-above has just moved every `DEFINED`/`PENDING` step to `CANCELLED`, so those can no longer be
-present, and a step is settled unless it is `RUNNING` or `CANCELLING`. It is the same predicate,
-not a different one.
+above has just moved every `DEFINED`/`PENDING`/`FAILED`/`TIMED_OUT` step to `CANCELLED`, so those
+can no longer be present, and a step is settled unless it is `RUNNING` or `CANCELLING`. It is the
+same predicate, not a different one.
 
 Because the task engine cannot stop a task that is *actively executing*, cancelling a
 step's task mainly **prevents a failed task from being retried**. The cancelled task will

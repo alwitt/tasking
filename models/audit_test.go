@@ -164,6 +164,105 @@ func TestSystemEventAuditParseMetadata(t *testing.T) {
 	})
 
 	// ------------------------------------------------------------------------------------
+	// Workflow-event group: every one of these types parses into SystemEventWorkflowEvents.
+
+	workflowEventTypes := []models.SystemEventTypeENUM{
+		models.SystemEventTypeDefineWorkflow,
+		models.SystemEventTypeWorkflowRunning,
+		models.SystemEventTypeWorkflowComplete,
+		models.SystemEventTypeWorkflowFailed,
+		models.SystemEventTypeWorkflowTimedOut,
+		models.SystemEventTypeWorkflowCancelling,
+		models.SystemEventTypeWorkflowCancelled,
+		models.SystemEventTypeWorkflowDeadlineUpdate,
+		models.SystemEventTypeDeleteWorkflow,
+	}
+	for _, eventType := range workflowEventTypes {
+		t.Run(string(eventType)+" parses workflow-event metadata", func(t *testing.T) {
+			assert := assert.New(t)
+
+			entry := models.SystemEventAudit{
+				EventType: eventType,
+				Metadata: datatypes.JSON(
+					`{"workflow_id": "unit-test-workflow-id", "creator": "unit-test-creator"}`,
+				),
+			}
+
+			parsed, err := entry.ParseMetadata(validator)
+			assert.Nil(err)
+			wfEvent, ok := parsed.(models.SystemEventWorkflowEvents)
+			assert.True(ok, "expected SystemEventWorkflowEvents, got %T", parsed)
+			assert.Equal("unit-test-workflow-id", wfEvent.WorkflowID)
+			assert.Equal("unit-test-creator", wfEvent.Creator)
+		})
+	}
+
+	t.Run("workflow-event metadata missing workflow_id fails validation", func(t *testing.T) {
+		assert := assert.New(t)
+
+		entry := models.SystemEventAudit{
+			EventType: models.SystemEventTypeWorkflowFailed,
+			Metadata:  datatypes.JSON(`{"creator": "unit-test-creator"}`),
+		}
+
+		_, err := entry.ParseMetadata(validator)
+		assert.NotNil(err)
+		var validationErr goutils.ValidationError
+		assert.ErrorAs(err, &validationErr)
+	})
+
+	// ------------------------------------------------------------------------------------
+	// Workflow-step-event group: every type parses into SystemEventWorkflowStepEvents.
+
+	workflowStepEventTypes := []models.SystemEventTypeENUM{
+		models.SystemEventTypeWorkflowStepDefined,
+		models.SystemEventTypeWorkflowStepPending,
+		models.SystemEventTypeWorkflowStepRunning,
+		models.SystemEventTypeWorkflowStepComplete,
+		models.SystemEventTypeWorkflowStepFailed,
+		models.SystemEventTypeWorkflowStepTimedOut,
+		models.SystemEventTypeWorkflowStepCancelling,
+		models.SystemEventTypeWorkflowStepCancelled,
+	}
+	for _, eventType := range workflowStepEventTypes {
+		t.Run(string(eventType)+" parses workflow-step-event metadata", func(t *testing.T) {
+			assert := assert.New(t)
+
+			entry := models.SystemEventAudit{
+				EventType: eventType,
+				Metadata: datatypes.JSON(
+					`{"step_id": "unit-test-step-id", "workflow_id": "unit-test-workflow-id", ` +
+						`"creator": "unit-test-creator"}`,
+				),
+			}
+
+			parsed, err := entry.ParseMetadata(validator)
+			assert.Nil(err)
+			stepEvent, ok := parsed.(models.SystemEventWorkflowStepEvents)
+			assert.True(ok, "expected SystemEventWorkflowStepEvents, got %T", parsed)
+			assert.Equal("unit-test-step-id", stepEvent.StepID)
+			assert.Equal("unit-test-workflow-id", stepEvent.WorkflowID)
+			assert.Equal("unit-test-creator", stepEvent.Creator)
+		})
+	}
+
+	t.Run("workflow-step-event metadata missing step_id fails validation", func(t *testing.T) {
+		assert := assert.New(t)
+
+		entry := models.SystemEventAudit{
+			EventType: models.SystemEventTypeWorkflowStepFailed,
+			Metadata: datatypes.JSON(
+				`{"workflow_id": "unit-test-workflow-id", "creator": "unit-test-creator"}`,
+			),
+		}
+
+		_, err := entry.ParseMetadata(validator)
+		assert.NotNil(err)
+		var validationErr goutils.ValidationError
+		assert.ErrorAs(err, &validationErr)
+	})
+
+	// ------------------------------------------------------------------------------------
 	// Error paths shared across event types
 
 	t.Run("unparsable metadata is a consistency error", func(t *testing.T) {
