@@ -281,6 +281,117 @@ persisted state. Throughout this document, *"a live task exists for a step"* mea
 task in a non-terminal state** — a terminal task from a prior run (e.g. the FAILED task of a
 since-revived step) does **not** count as live and must not block a fresh dispatch.
 
+### Step Execution: the Step Runner and its two registrations
+
+Every workflow step, regardless of its `Type`, runs as a task of the **one** task type
+`WorkflowExecutionTaskName` (`__EXECUTE_WORKFLOW_STEP__`), executed by the **one** task
+processor the workflow engine registers with the task engine — the **Step Runner**. The
+task engine therefore sees a single task type and a single processor; the heterogeneity of a
+workflow's steps is entirely internal to the Step Runner. There are **two distinct
+registration acts**, aimed at two different engines, and they must not be conflated:
+
+1. **Runner ↔ Task Engine** (engine-internal, once): the workflow engine registers its Step
+   Runner (a `models.TaskExecutionProcessor`) with the task engine under
+   `WorkflowExecutionTaskName`. The embedding application never performs or sees this — it is
+   the workflow engine wiring itself to its executor.
+2. **Step handlers ↔ Runner** (application-facing, per `Type`): the embedding application
+   supplies one `models.WorkflowStepProcessor` per step `Type`. The Runner holds these in a
+   registry (`map[string]models.WorkflowStepProcessor`) and dispatches to them by `step.Type`.
+
+**Registration is construct-time and immutable.** The `Type → WorkflowStepProcessor` map is
+provided once, when the Runner is constructed, and never mutated afterward. A deployment's set
+of step types is a static property of the binary; there is no runtime `Register` method and no
+lock, which removes an entire class of races (a write to the registry concurrent with a task
+consuming it) and the ordering hole of "a task for type X arrives before X is registered." This
+mirrors the intended construct-time wiring of the task engine's own processors.
+
+**The same registration is shared with the Workflow Client.** Because the handler set is known
+at construction, the **Workflow Client** is given the *same* registration (the set of known step
+`Type`s), so **Define Workflow can reject, up front, a workflow containing a step whose `Type`
+has no registered handler** — a fail-fast validation far friendlier than a mid-run failure. In
+the common single-process deployment the Client and Runner share this registration directly. The
+runtime `MissingHandler` guard below remains the authoritative backstop (the Client and Runner
+*could* be separate processes with divergent registration), but the definition-time check catches
+the overwhelmingly common misconfiguration at the moment it is introduced.
+
+#### What the Runner does on invocation
+
+The task the scheduler submits carries, as its task `Parameters`, only the **workflow step
+ID** (`TaskParameterExecuteWorkflowStep`). On invocation the Runner:
+
+1. Parses the task `Parameters` to recover the step ID.
+2. Loads the `WorkflowStep` by ID, and its parent `Workflow` (from `step.WorkflowID` — the
+   scheduler does not pass the workflow ID; the Runner derives it, so the two can never
+   disagree).
+3. Looks up `handlers[step.Type]`. **Missing → `MissingHandler` error** (see below).
+4. Invokes `handler.ProcessWorkflowStep(ctx, workflow, step)` and returns its result as the
+   task's outcome.
+
+**Two separate `Parameters` blobs — never conflated.** The *task* `Parameters` is
+Runner-owned plumbing (the step ID) and the application never authors or reads it. The *step*
+`Parameters` (`WorkflowStep.Parameters`, set by the application at Define Workflow) is opaque
+to the Runner: it is passed through, unparsed, inside the `WorkflowStep` handed to
+`ProcessWorkflowStep`. Only the per-`Type` handler knows how to interpret it. The Runner never
+inspects `step.Parameters`.
+
+**The Runner never reports to the scheduler.** Its return value becomes the *task's* terminal
+state; feedback to the workflow scheduler flows entirely through the `notify` path above
+(Invariant 6). The Runner is unaware of the scheduler.
+
+#### Error handling and the two error namespaces
+
+An error out of `ProcessTaskExecution` reaches the task engine as a plain `error`; the task
+engine cannot (and by [Invariant 6](#design-invariants) must not) tell *why* the step failed.
+Two error namespaces converge here, and their retry treatment differs:
+
+- **Workflow step processor error** (the registered `WorkflowStepProcessor` failed — e.g. a
+  remote server timed out) and **Runner-internal transient error** (e.g. the DB read of the
+  step/workflow failed): both are potentially **transient**, so both are returned verbatim
+  and are **subject to the task engine's normal per-attempt retry** using the step's
+  `RetryParams`. This is precisely the per-attempt retry the design wants the task engine to
+  own; the Runner does not suppress it.
+- **`MissingHandler`** (no `WorkflowStepProcessor` is registered for `step.Type`): a
+  **configuration error, never transient** — retrying cannot make a handler appear. The Runner
+  returns a distinct `MissingHandler` error, and the task engine **bypasses retry** for it,
+  failing the task immediately. The step then goes `FAILED` promptly (its reason captured in
+  `WorkflowStep.ErrorMessage`), rather than burning the full retry budget on a hopeless attempt.
+
+  > **Task-engine dependency.** For the task engine to *bypass* retry on `MissingHandler`, a
+  > processor must be able to signal "do not retry this" out of `ProcessTaskExecution`, and the
+  > task scheduler must honor it. The task engine's current retry path does not yet distinguish
+  > a non-retryable processor error, and its processor registration is not yet construct-time
+  > (`Executor.RegisterTaskProcessor` is a post-construction call). Both are **task-engine
+  > changes tracked separately**; this section states the contract the workflow engine relies
+  > on, not its task-engine implementation.
+
+#### Failure history and its retention
+
+The **latest** failure reason for a step is cached on `WorkflowStep.ErrorMessage` at the
+`FAILED`/`TIMED_OUT` transition, as a convenience snapshot (single read, no join). The full
+**history of attempts** is *not* duplicated into a workflow-side table: it already exists as
+the step's linked tasks (one task per run: first run + each revive) and each task's
+`TaskExecution` rows (one per retry, each carrying its own `error_msg`), reachable through the
+step↔task linkage. The audit event log is deliberately **not** used as this history store — it
+is a persisted *log* subject to pruning/archival, with the wrong lifecycle for durable history.
+
+Because that history lives in the task rows, it must not be deletable out from under a step:
+
+- A task linked in `workflow_step_runner_tasks` **cannot be deleted directly** by the user
+  (`DeleteTask` refuses it). It leaves only with its workflow.
+- **Deleting a workflow reaps its step tasks** (and their `TaskExecution` history, via FK
+  cascade) as part of tearing the workflow down. This is a privileged, unguarded delete path,
+  distinct from the user `DeleteTask` — it must be, or the linkage guard would block the
+  workflow's own cleanup. The ordering is **capture-then-cascade**: list the workflow's steps,
+  list their linked task IDs, bulk-delete those tasks, then delete the workflow (which cascades
+  the steps). The task IDs are captured *before* any delete, because deleting the workflow (or
+  its steps) cascades away the `workflow_step_runner_tasks` link rows that are the only pointer
+  from steps to tasks — read them first or the tasks orphan. The whole sequence runs in one
+  transaction.
+
+The intent is deliberate: **a workflow-owned task never outlives its workflow.** History is
+coextensive with the workflow; when the workflow is legitimately deleted, its steps' tasks and
+their execution attempts go with it, cleanly and atomically.
+
 ---
 
 ## Scheduler Events
