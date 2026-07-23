@@ -39,6 +39,8 @@ func TestOnTaskComplete(t *testing.T) {
 	utCtx := context.Background()
 	simErr := fmt.Errorf("simulated failure")
 
+	nonRetryable := models.TaskFailureDispositionNonRetryable
+
 	type testCase struct {
 		name string
 		// taskErr the error handed to OnTaskComplete (nil means success).
@@ -47,6 +49,8 @@ func TestOnTaskComplete(t *testing.T) {
 		seedPool bool
 		// expectType the IPC message type expected on the scheduler queue.
 		expectType models.IPCMessageTypeEnum
+		// expectDisposition the disposition expected on an EXECUTE_FAILED message (nil otherwise).
+		expectDisposition *models.TaskFailureDispositionENUM
 		// enqueueErr the error the scheduler sender returns.
 		enqueueErr error
 		// deleteErr the error the buffer delete returns.
@@ -65,6 +69,29 @@ func TestOnTaskComplete(t *testing.T) {
 			taskErr:    simErr,
 			seedPool:   true,
 			expectType: models.IPCMsgTypeExecuteFailed,
+		},
+		{
+			// A plain (recoverable) failure reports EXECUTE_FAILED with no disposition,
+			// which the scheduler treats as retryable.
+			name:       "recoverable failure has no disposition",
+			taskErr:    models.NewTaskExecutionError("boom", simErr, true),
+			seedPool:   true,
+			expectType: models.IPCMsgTypeExecuteFailed,
+		},
+		{
+			// A NonRecoverableError reports EXECUTE_FAILED with a NON_RETRYABLE disposition.
+			name:              "non-recoverable failure carries disposition",
+			taskErr:           models.NewTaskExecutionError("boom", models.NewNonRecoverableError("permanent", nil, true), true),
+			seedPool:          true,
+			expectType:        models.IPCMsgTypeExecuteFailed,
+			expectDisposition: &nonRetryable,
+		},
+		{
+			// An engine-level failure (e.g. missing processor) reports ENGINE_FAILED.
+			name:       "engine failure reports engine failed",
+			taskErr:    models.NewTaskExecutorError("missing processor", nil, true),
+			seedPool:   true,
+			expectType: models.IPCMsgTypeEngineFailed,
 		},
 		{
 			name:       "success without recorded msg",
@@ -119,6 +146,14 @@ func TestOnTaskComplete(t *testing.T) {
 					assert.True(ok, "expected IPCMessageExecuteInstance, got %T", msg)
 					assert.Equal(tc.expectType, execMsg.Type)
 					assert.Equal(instanceID, execMsg.InstanceID)
+					if tc.expectDisposition == nil {
+						assert.Nil(execMsg.Disposition)
+					} else {
+						assert.NotNil(execMsg.Disposition)
+						if execMsg.Disposition != nil {
+							assert.Equal(*tc.expectDisposition, *execMsg.Disposition)
+						}
+					}
 				}).
 				Return(tc.enqueueErr)
 

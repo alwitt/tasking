@@ -185,6 +185,36 @@ type schedulerWorkReqTaskExecutionFailed struct {
 }
 
 /*
+decideExecutionRetry decides whether a failed execution instance should be retried, and after
+what delay. It is the single decision point shared by processTaskExecutionFailed's two callers
+(the EXECUTE_FAILED IPC handler and the maintenance backstop), so the "skip retry on a
+non-retryable failure" rule cannot drift between them.
+
+A NON_RETRYABLE disposition (persisted on the instance by the executor when a processor returned
+a NonRecoverableError) short-circuits to "no retry" regardless of remaining retry budget. Any
+other disposition (including nil, the retryable default) applies the task's exponential backoff.
+
+	@param failedInstance models.TaskExecution - the execution instance that failed
+	@param retryParams models.TaskRetryParameters - the parent task's retry parameters
+	@param priorFailureCount int - total number of failed executions for the task (including this one)
+	@returns retryDelay time.Duration - delay before the retry (0 when not retrying)
+	@returns shouldRetry bool - whether a retry should be scheduled
+*/
+func decideExecutionRetry(
+	failedInstance models.TaskExecution,
+	retryParams models.TaskRetryParameters,
+	priorFailureCount int,
+) (time.Duration, bool) {
+	if failedInstance.FailureDisposition != nil &&
+		*failedInstance.FailureDisposition == models.TaskFailureDispositionNonRetryable {
+		return 0, false
+	}
+	// NextDelay is 0-based on the retry attempt: with N total failures the next retry is attempt N-1.
+	retryDelay := retryParams.NextDelay(priorFailureCount - 1)
+	return retryDelay, retryDelay > 0
+}
+
+/*
 processTaskExecutionFailed process failure of task execution
 
 	@param ctx context.Context - execution context
@@ -233,8 +263,7 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 				// captured when an instance ends and is preserved through the later move
 				// to FINALIZED, so it (unlike `state`) reliably reports the outcome. The
 				// current instance was marked with a FAILED terminal state before this
-				// handler ran, so it is included in the count. `NextDelay` is 0-based on
-				// the retry attempt: with N total failures the next retry is attempt N-1.
+				// handler ran, so it is included in the count.
 				failedExecInstances, err := dbClient.ListTaskExecutions(
 					dbCtx, taskEntry.ID, db.TaskExecutionQueryFilter{
 						TerminalStates: []models.TaskExecutionStateENUM{models.TaskExecutionStateFailed},
@@ -248,9 +277,11 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 					)
 				}
 
-				retryDelay := taskEntry.RetryParams.NextDelay(len(failedExecInstances) - 1)
-				if retryDelay <= 0 {
-					// Exhausted retries
+				retryDelay, shouldRetry := decideExecutionRetry(
+					execInstanceEntry, taskEntry.RetryParams, len(failedExecInstances),
+				)
+				if !shouldRetry {
+					// Non-retryable failure, or retries exhausted
 					if err = dbClient.MarkTaskFailed(dbCtx, taskEntry.ID); err != nil {
 						return models.NewPersistenceError(
 							fmt.Sprintf("failed to mark task %s failed", taskEntry.ID), err, true,
@@ -414,7 +445,7 @@ func (s *schedulerImpl) processTaskExecutionTimedOut(
 			}
 
 			if err = dbClient.MarkTaskExecFailed(
-				dbCtx, instanceID, fmt.Sprintf("timed out at %s", timestamp.String()), timestamp,
+				dbCtx, instanceID, fmt.Sprintf("timed out at %s", timestamp.String()), nil, timestamp,
 			); err != nil {
 				return models.NewPersistenceError(
 					fmt.Sprintf(

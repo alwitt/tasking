@@ -37,7 +37,7 @@ func (taskEntry) TableName() string {
 type taskExecutionEntry struct {
 	models.TaskExecution
 	Task   taskEntry           `gorm:"constraint:OnDelete:CASCADE;foreignKey:TaskID" validate:"-"`
-	Parent *taskExecutionEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:RetryParentExecutionID" validate:"-"`
+	Parent *taskExecutionEntry `gorm:"constraint:OnDelete:SET NULL;foreignKey:RetryParentExecutionID" validate:"-"`
 }
 
 // TableName hard code table name

@@ -174,27 +174,6 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 				assertPreprocessCore(assert, err, &core)
 			},
 		},
-		{
-			name: "processor not found",
-			setupDB: func(mockDatabase *mockdb.Database, instanceID, taskID, taskName string) {
-				mockDatabase.EXPECT().
-					GetTaskExecution(mock.Anything, instanceID).
-					Return(validExecution(instanceID, taskID), nil)
-				mockDatabase.EXPECT().
-					GetTask(mock.Anything, taskID).
-					Return(validTask(taskID, taskName), nil)
-				mockDatabase.EXPECT().
-					MarkTaskExecProcessing(mock.Anything, instanceID).
-					Return(nil)
-			},
-			// deliberately do NOT register a processor
-			checkErr: func(assert *assert.Assertions, err error) {
-				// bare TaskPreprocessError with nil core
-				var preErr models.TaskPreprocessError
-				assert.True(errors.As(err, &preErr), "expected TaskPreprocessError, got %T: %v", err, err)
-				assert.Nil(preErr.Core)
-			},
-		},
 	}
 
 	for _, tc := range cases {
@@ -232,7 +211,7 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 			executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
 				Persistence:  mockClient,
 				OnCompleteCB: cbMock.OnComplete,
-			})
+			}, nil)
 			assert.Nil(err)
 			defer func() { assert.Nil(executor.Stop(utCtx)) }()
 
@@ -290,7 +269,7 @@ func TestExecutorExecutionFailure(t *testing.T) {
 
 	// Post-processing records the failure.
 	mockDatabase.EXPECT().
-		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
+		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
 	// Observe the async result via the OnComplete callback.
@@ -305,11 +284,9 @@ func TestExecutorExecutionFailure(t *testing.T) {
 	executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
 		Persistence:  mockClient,
 		OnCompleteCB: cbMock.OnComplete,
-	})
+	}, map[string]models.TaskExecutionProcessor{taskName: processor})
 	assert.Nil(err)
 	defer func() { assert.Nil(executor.Stop(utCtx)) }()
-
-	assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
 	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
@@ -323,6 +300,169 @@ func TestExecutorExecutionFailure(t *testing.T) {
 		errors.As(gotErr, &execErr), "expected TaskExecutionError, got %T: %v", gotErr, gotErr,
 	)
 	assert.ErrorIs(execErr.Core, processorErr)
+}
+
+// TestExecutorMissingProcessor validates that when this queue has no processor for the task
+// name, the executor does NOT leave the instance stuck in PROCESSING: it marks the instance
+// FAILED (via the post-processing defer) and surfaces a TaskExecutorError - the marker the
+// receiver maps to an ENGINE_FAILED report - through the OnComplete callback. This is the
+// regression guard for the original stuck-in-PROCESSING bug.
+func TestExecutorMissingProcessor(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+
+	instanceID := ulid.Make().String()
+	taskID := ulid.Make().String()
+	taskName := "unit-test-task"
+
+	mockClient := mockdb.NewClient(t)
+	mockDatabase := mockdb.NewDatabase(t)
+	cbMock := mocktest.NewUnitTestCallbackCollector(t)
+
+	mockClient.EXPECT().
+		UseDatabaseInTransaction(mock.Anything, mock.Anything).
+		RunAndReturn(func(
+			ctx context.Context, core func(context.Context, db.Database) error,
+		) error {
+			return core(ctx, mockDatabase)
+		})
+
+	// Pre-processing succeeds and commits PROCESSING.
+	execEntry := validExecution(instanceID, taskID)
+	taskEntry := validTask(taskID, taskName)
+	mockDatabase.EXPECT().GetTaskExecution(mock.Anything, instanceID).Return(execEntry, nil)
+	mockDatabase.EXPECT().GetTask(mock.Anything, taskID).Return(taskEntry, nil)
+	mockDatabase.EXPECT().MarkTaskExecProcessing(mock.Anything, instanceID).Return(nil)
+
+	// The instance must be marked FAILED - not left in PROCESSING - with a retryable (nil)
+	// disposition, since the no-retry is enforced structurally via the ENGINE_FAILED routing.
+	var gotDisposition *models.TaskFailureDispositionENUM
+	dispositionSet := false
+	mockDatabase.EXPECT().
+		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(
+			_ context.Context, _ string, _ string,
+			disposition *models.TaskFailureDispositionENUM, _ time.Time,
+		) {
+			gotDisposition = disposition
+			dispositionSet = true
+		}).
+		Return(nil)
+
+	complete := make(chan error, 1)
+	cbMock.EXPECT().
+		OnComplete(mock.Anything, instanceID, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ string, err error, _ time.Time) {
+			complete <- err
+		}).
+		Return()
+
+	// Deliberately construct with NO processor for the task name.
+	executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
+		Persistence:  mockClient,
+		OnCompleteCB: cbMock.OnComplete,
+	}, nil)
+	assert.Nil(err)
+	defer func() { assert.Nil(executor.Stop(utCtx)) }()
+
+	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
+
+	gotErr := waitForOnComplete(t, complete)
+	assert.NotNil(gotErr)
+
+	// Engine-failure marker so the receiver reports ENGINE_FAILED.
+	var executorErr models.TaskExecutorError
+	assert.True(
+		errors.As(gotErr, &executorErr), "expected TaskExecutorError, got %T: %v", gotErr, gotErr,
+	)
+	// Instance was marked FAILED with a retryable (nil) disposition.
+	assert.True(dispositionSet, "expected MarkTaskExecFailed to be called")
+	assert.Nil(gotDisposition)
+}
+
+// TestExecutorNonRecoverableFailure validates that when the processor returns an error wrapped
+// in a NonRecoverableError, the executor persists a NON_RETRYABLE disposition when marking the
+// instance FAILED, so the scheduler (and the maintenance backstop) will not retry it.
+func TestExecutorNonRecoverableFailure(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+
+	instanceID := ulid.Make().String()
+	taskID := ulid.Make().String()
+	taskName := "unit-test-task"
+
+	processorErr := models.NewNonRecoverableError("permanently bad input", nil, true)
+
+	mockClient := mockdb.NewClient(t)
+	mockDatabase := mockdb.NewDatabase(t)
+	cbMock := mocktest.NewUnitTestCallbackCollector(t)
+	processor := mockmodels.NewTaskExecutionProcessor(t)
+
+	mockClient.EXPECT().
+		UseDatabaseInTransaction(mock.Anything, mock.Anything).
+		RunAndReturn(func(
+			ctx context.Context, core func(context.Context, db.Database) error,
+		) error {
+			return core(ctx, mockDatabase)
+		})
+
+	execEntry := validExecution(instanceID, taskID)
+	taskEntry := validTask(taskID, taskName)
+	mockDatabase.EXPECT().GetTaskExecution(mock.Anything, instanceID).Return(execEntry, nil)
+	mockDatabase.EXPECT().GetTask(mock.Anything, taskID).Return(taskEntry, nil)
+	mockDatabase.EXPECT().MarkTaskExecProcessing(mock.Anything, instanceID).Return(nil)
+
+	processor.EXPECT().
+		ProcessTaskExecution(mock.Anything, taskEntry, execEntry).
+		Return(processorErr)
+
+	// Capture the disposition persisted with the FAILED mark.
+	var gotDisposition *models.TaskFailureDispositionENUM
+	mockDatabase.EXPECT().
+		MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(
+			_ context.Context, _ string, _ string,
+			disposition *models.TaskFailureDispositionENUM, _ time.Time,
+		) {
+			gotDisposition = disposition
+		}).
+		Return(nil)
+
+	complete := make(chan error, 1)
+	cbMock.EXPECT().
+		OnComplete(mock.Anything, instanceID, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ string, err error, _ time.Time) {
+			complete <- err
+		}).
+		Return()
+
+	executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
+		Persistence:  mockClient,
+		OnCompleteCB: cbMock.OnComplete,
+	}, map[string]models.TaskExecutionProcessor{taskName: processor})
+	assert.Nil(err)
+	defer func() { assert.Nil(executor.Stop(utCtx)) }()
+
+	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
+
+	gotErr := waitForOnComplete(t, complete)
+	assert.NotNil(gotErr)
+
+	// The NonRecoverableError is still reachable through the TaskExecutionError wrap.
+	var nonRecoverable models.NonRecoverableError
+	assert.True(
+		errors.As(gotErr, &nonRecoverable),
+		"expected NonRecoverableError in chain, got %T: %v", gotErr, gotErr,
+	)
+	// A NON_RETRYABLE disposition was persisted.
+	assert.NotNil(gotDisposition)
+	if gotDisposition != nil {
+		assert.Equal(models.TaskFailureDispositionNonRetryable, *gotDisposition)
+	}
 }
 
 // TestExecutorPostprocessingFailures validates that when the post-processing
@@ -361,7 +501,7 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 			processorErr: processorErr,
 			setupPostProcess: func(mockDatabase *mockdb.Database, instanceID string) {
 				mockDatabase.EXPECT().
-					MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
+					MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
 					Return(dbFailure)
 			},
 		},
@@ -417,11 +557,9 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 			executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
 				Persistence:  mockClient,
 				OnCompleteCB: cbMock.OnComplete,
-			})
+			}, map[string]models.TaskExecutionProcessor{taskName: processor})
 			assert.Nil(err)
 			defer func() { assert.Nil(executor.Stop(utCtx)) }()
-
-			assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
 			assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 
@@ -497,11 +635,9 @@ func TestExecutorHappyPath(t *testing.T) {
 	executor, err := task.NewExecutor(utCtx, "unit-test-queue", 1, 1, task.ExecutorSupport{
 		Persistence:  mockClient,
 		OnCompleteCB: cbMock.OnComplete,
-	})
+	}, map[string]models.TaskExecutionProcessor{taskName: processor})
 	assert.Nil(err)
 	defer func() { assert.Nil(executor.Stop(utCtx)) }()
-
-	assert.Nil(executor.RegisterTaskProcessor(taskName, processor))
 
 	assert.Nil(executor.ProcessExecutionInstance(utCtx, instanceID))
 

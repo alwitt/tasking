@@ -3,6 +3,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -32,15 +33,6 @@ type ExecutorSupport struct {
 // Executor process task execution instances
 type Executor interface {
 	/*
-		RegisterTaskProcessor register a processor for a task-name
-
-			@param taskName string - register processor for this task name
-			@param processor models.TaskExecutionProcessor - the processor
-			@returns error if the task name already has a processor, or the processor is nil
-	*/
-	RegisterTaskProcessor(taskName string, processor models.TaskExecutionProcessor) error
-
-	/*
 		ProcessExecutionInstance submit a new task execution instance for processing
 
 			@param ctx context.Context - execution context
@@ -68,8 +60,8 @@ type executorImpl struct {
 	workerCtxCancel context.CancelFunc
 	workers         goutils.TaskProcessor
 
-	lock sync.RWMutex
-	// availableProcessors map of available processors for various supported tasks
+	// availableProcessors map of available processors for various supported tasks. Fixed at
+	// construction and never mutated afterwards, so it needs no lock.
 	availableProcessors map[string]models.TaskExecutionProcessor
 }
 
@@ -81,6 +73,8 @@ NewExecutor define new task executor for a particular task queue
 	@param workerCount int - number of workers to spawn
 	@param requestBufferLen int - number of execution requests to buffer for the worker pool
 	@param support ExecutorSupport - execution support package
+	@param processors map[string]models.TaskExecutionProcessor - task-name to processor mapping
+	    this executor supports. Fixed at construction; must contain no nil processors.
 	@returns new task executor
 */
 func NewExecutor(
@@ -89,6 +83,7 @@ func NewExecutor(
 	workerCount int,
 	requestBufferLen int,
 	support ExecutorSupport,
+	processors map[string]models.TaskExecutionProcessor,
 ) (Executor, error) {
 	logTags := log.Fields{
 		"package": "tasking", "module": "task", "component": "task-executor", "queue": taskQueue,
@@ -97,6 +92,18 @@ func NewExecutor(
 	validate := validator.New()
 	if err := validate.Struct(&support); err != nil {
 		return nil, goutils.NewBadInputError("execution support package is invalid", err, true)
+	}
+
+	// Copy the processor mapping so the executor owns an immutable snapshot, and reject nil
+	// processors up front rather than discovering them at dispatch time.
+	availableProcessors := make(map[string]models.TaskExecutionProcessor, len(processors))
+	for taskName, processor := range processors {
+		if processor == nil {
+			return nil, goutils.NewBadInputError(
+				fmt.Sprintf("can't register nil processor for task name %s", taskName), nil, true,
+			)
+		}
+		availableProcessors[taskName] = processor
 	}
 
 	instance := &executorImpl{
@@ -110,8 +117,7 @@ func NewExecutor(
 		queue:               taskQueue,
 		support:             support,
 		wg:                  &sync.WaitGroup{},
-		availableProcessors: map[string]models.TaskExecutionProcessor{},
-		lock:                sync.RWMutex{},
+		availableProcessors: availableProcessors,
 	}
 	instance.workerCtx, instance.workerCtxCancel = context.WithCancel(parentCtx)
 	if err := models.RegisterWithValidator(instance.validator); err != nil {
@@ -194,32 +200,6 @@ func (e *executorImpl) Stop(ctx context.Context) error {
 			fmt.Sprintf("queue %s executor did not stop in time", e.queue), err, true,
 		)
 	}
-	return nil
-}
-
-/*
-RegisterTaskProcessor register a processor for a task-name
-
-	@param taskName string - register processor for this task name
-	@param processor models.TaskExecutionProcessor - the processor
-	@returns error if the task name already has a processor, or the processor is nil
-*/
-func (e *executorImpl) RegisterTaskProcessor(
-	taskName string, processor models.TaskExecutionProcessor,
-) error {
-	if processor == nil {
-		return goutils.NewBadInputError(
-			fmt.Sprintf("can't register nil processor for task name %s", taskName), nil, true,
-		)
-	}
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	if _, ok := e.availableProcessors[taskName]; ok {
-		return goutils.NewConsistencyError(
-			fmt.Sprintf("task name %s already has a registered processor", taskName), nil, true,
-		)
-	}
-	e.availableProcessors[taskName] = processor
 	return nil
 }
 
@@ -339,40 +319,14 @@ func (e *executorImpl) processExecutionInstance(
 		return finalErr
 	}
 
-	// Locate the processor
-	getProcessor := func() (models.TaskExecutionProcessor, bool) {
-		e.lock.RLock()
-		defer e.lock.RUnlock()
-		p, ok := e.availableProcessors[taskEntry.TaskName]
-		return p, ok
-	}
-	processor, found := getProcessor()
-	if !found {
-		// Notify system of processing failure
-		finalErr := models.NewTaskPreprocessError(
-			fmt.Sprintf(
-				"execution instance %s requested missing processor for task name %s",
-				instanceID,
-				taskEntry.TaskName,
-			), nil, true,
-		)
-		e.notifyOnComplete(e.workerCtx, instanceID, finalErr, time.Now().UTC())
-		return finalErr
-	}
-
 	// ------------------------------------------------------------------------------------
 	// Process the task
 
-	// Derive the execution context, honoring the execution instance's deadline if set
-	var theCtx context.Context
-	var theCtxCancel context.CancelFunc
-	if taskExecutionEntry.Deadline != nil {
-		theCtx, theCtxCancel = context.WithDeadline(e.workerCtx, *taskExecutionEntry.Deadline)
-	} else {
-		theCtx, theCtxCancel = context.WithCancel(e.workerCtx)
-	}
-	defer theCtxCancel()
-
+	// taskErr holds the outcome of the processing attempt. It is nil on success, and is set
+	// to the failure that drives the post-processing defer below (which marks the instance
+	// FAILED and notifies). It is declared here, above the processor lookup, so a missing
+	// processor is terminated through the same post-processing path rather than short-circuiting
+	// before the defer is registered (which would leave the row stuck in PROCESSING).
 	var taskErr error
 
 	// Define the post-processing steps
@@ -386,7 +340,7 @@ func (e *executorImpl) processExecutionInstance(
 				// Mark that task completed
 				if taskErr != nil {
 					if err := dbClient.MarkTaskExecFailed(
-						dbCtx, instanceID, taskErr.Error(), completedAt,
+						dbCtx, instanceID, taskErr.Error(), failureDisposition(taskErr), completedAt,
 					); err != nil {
 						return models.NewPersistenceError(
 							fmt.Sprintf("failed to mark execution instance %s failed", instanceID), err, true,
@@ -414,7 +368,37 @@ func (e *executorImpl) processExecutionInstance(
 		e.notifyOnComplete(e.workerCtx, instanceID, taskErr, time.Now().UTC())
 	}()
 
-	// Execute the task based on task type
+	// Locate the processor. A missing processor means this queue was handed a task name it has
+	// no processor for (a misrouted PENDING_INSTANCE / engine misconfiguration). This is an
+	// engine-level failure, not a task-execution failure: a TaskExecutorError is the marker the
+	// receiver's onTaskComplete recognizes to report ENGINE_FAILED. Because taskErr is set, the
+	// post-processing defer marks the instance FAILED before notifying, keeping the DB and the
+	// scheduler in agreement.
+	processor, found := e.availableProcessors[taskEntry.TaskName]
+	if !found {
+		taskErr = models.NewTaskExecutorError(
+			fmt.Sprintf(
+				"execution instance %s requested missing processor for task name %s",
+				instanceID,
+				taskEntry.TaskName,
+			), nil, true,
+		)
+		return taskErr
+	}
+
+	// Derive the execution context, honoring the execution instance's deadline if set
+	var theCtx context.Context
+	var theCtxCancel context.CancelFunc
+	if taskExecutionEntry.Deadline != nil {
+		theCtx, theCtxCancel = context.WithDeadline(e.workerCtx, *taskExecutionEntry.Deadline)
+	} else {
+		theCtx, theCtxCancel = context.WithCancel(e.workerCtx)
+	}
+	defer theCtxCancel()
+
+	// Execute the task based on task type. The processor's error is carried as the Core of the
+	// wrapping TaskExecutionError, so errors.As can still find a NonRecoverableError a processor
+	// returned to opt this failure out of retry.
 	if err := processor.ProcessTaskExecution(theCtx, taskEntry, taskExecutionEntry); err != nil {
 		taskErr = models.NewTaskExecutionError(
 			fmt.Sprintf("failed to execute task %s instance %s", taskEntry.ID, taskExecutionEntry.ID),
@@ -424,4 +408,19 @@ func (e *executorImpl) processExecutionInstance(
 	}
 
 	return taskErr
+}
+
+// failureDisposition derives the retry disposition to persist for a failed execution instance
+// from the failure error. A processor may wrap its error in a models.NonRecoverableError to opt
+// the failure out of retry; that is the only case that yields NON_RETRYABLE. Every other failure
+// (including a missing processor / engine failure) is left nil, which the scheduler treats as
+// retryable - engine failures are instead prevented from retrying structurally, by being reported
+// as ENGINE_FAILED rather than EXECUTE_FAILED.
+func failureDisposition(taskErr error) *models.TaskFailureDispositionENUM {
+	var nonRecoverable models.NonRecoverableError
+	if errors.As(taskErr, &nonRecoverable) {
+		disposition := models.TaskFailureDispositionNonRetryable
+		return &disposition
+	}
+	return nil
 }

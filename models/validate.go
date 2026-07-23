@@ -44,6 +44,12 @@ func RegisterWithValidator(v *validator.Validate) error {
 	}
 
 	if err := goutils.RegisterENUMInValidator(
+		v, "task_failure_disposition", goutils.ValidateStringENUM[TaskFailureDispositionENUM](),
+	); err != nil {
+		return err
+	}
+
+	if err := goutils.RegisterENUMInValidator(
 		v, "ipc_msg_type", goutils.ValidateStringENUM[IPCMessageTypeEnum](),
 	); err != nil {
 		return err

@@ -24,6 +24,7 @@ type ExecutorFactoryCB func(
 	workerCount int,
 	requestBufferLen int,
 	support ExecutorSupport,
+	processors map[string]models.TaskExecutionProcessor,
 ) (Executor, error)
 
 // IPCMsgReceiverFactoryCB factory function signature for defining new Redis
@@ -93,6 +94,10 @@ type NewReceiverParams struct {
 	Config models.TaskReceiverConfig `validate:"required"`
 	// ExecutorFactory factory function to define task executors
 	ExecutorFactory ExecutorFactoryCB `validate:"required"`
+	// Processors task-name to processor mapping per queue name. Each configured queue must have
+	// an entry (possibly empty), and every queue key must be a configured queue. Fixed at
+	// construction and handed to that queue's executor.
+	Processors map[string]map[string]models.TaskExecutionProcessor `validate:"required"`
 	// Redis REDIS client
 	Redis goutilsRedis.Client `validate:"required"`
 	// IPCReceiverFactory factory function to define Redis based IPC message receivers
@@ -161,6 +166,21 @@ func NewReceiver(
 		instance.ipcReceivers[oneQueue.Name] = receiver
 	}
 
+	// Validate the processor mapping against the configured queues: every processor must belong
+	// to a queue this receiver serves. A processor bound to an unknown queue is a wiring mistake
+	// that would otherwise be silently ignored.
+	configuredQueues := map[string]bool{}
+	for _, oneQueue := range instance.config.Queues {
+		configuredQueues[oneQueue.Name] = true
+	}
+	for queueName := range params.Processors {
+		if !configuredQueues[queueName] {
+			return nil, goutils.NewBadInputError(
+				fmt.Sprintf("processors provided for unconfigured queue '%s'", queueName), nil, true,
+			)
+		}
+	}
+
 	// Define the executors for each task queue
 	for _, oneQueue := range instance.config.Queues {
 		executor, err := params.ExecutorFactory(
@@ -174,6 +194,7 @@ func NewReceiver(
 					)
 				},
 			},
+			params.Processors[oneQueue.Name],
 		)
 		if err != nil {
 			return nil, models.NewTaskReceiverError(
@@ -211,11 +232,17 @@ func (r *receiverImpl) reportTaskExecutionProcessingCompleted(
 }
 
 // reportTaskExecutionProcessingFailed helper function to report task execution
-// processing failure
+// processing failure. The disposition, when non-nil, tells the scheduler whether the failure
+// is retryable; a nil disposition is treated as retryable.
 func (r *receiverImpl) reportTaskExecutionProcessingFailed(
-	ctx context.Context, instanceID string, timestamp time.Time,
+	ctx context.Context,
+	instanceID string,
+	disposition *models.TaskFailureDispositionENUM,
+	timestamp time.Time,
 ) error {
-	msg := models.PrepareIPCMsgTaskExecutionProcessFailed(r.config.Name, instanceID, timestamp)
+	msg := models.PrepareIPCMsgTaskExecutionProcessFailed(
+		r.config.Name, instanceID, disposition, timestamp,
+	)
 	return r.schedulerIPCSender.EnqueueMessage(ctx, msg)
 }
 
@@ -290,19 +317,47 @@ func (r *receiverImpl) onTaskComplete(
 ) {
 	logTags := r.GetLogTagsForContext(ctx)
 	if err != nil {
-		callErr := r.reportTaskExecutionProcessingFailed(ctx, instanceID, timestamp)
-		if callErr != nil {
+		// Classify the failure. A TaskExecutorError marks an engine-level failure (e.g. this
+		// queue has no processor for the task name) - it is reported as ENGINE_FAILED and is
+		// never retried. Any other failure is a task-execution failure reported as EXECUTE_FAILED;
+		// a processor may have wrapped its error in a NonRecoverableError to opt out of retry, in
+		// which case a NON_RETRYABLE disposition rides along so the scheduler skips the retry.
+		var executorErr models.TaskExecutorError
+		if errors.As(err, &executorErr) {
+			callErr := r.reportTaskExecutionEngineFailed(ctx, instanceID, timestamp)
+			if callErr != nil {
+				log.
+					WithError(callErr).
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					WithField("exec-id", instanceID).
+					Error("Failed to report task execution engine failure")
+			}
 			log.
-				WithError(callErr).
+				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
 				WithField("exec-id", instanceID).
-				Error("Failed to report task execution failure")
+				Error("Task execution instance hit an engine failure during processing")
+		} else {
+			var disposition *models.TaskFailureDispositionENUM
+			var nonRecoverable models.NonRecoverableError
+			if errors.As(err, &nonRecoverable) {
+				d := models.TaskFailureDispositionNonRetryable
+				disposition = &d
+			}
+			callErr := r.reportTaskExecutionProcessingFailed(ctx, instanceID, disposition, timestamp)
+			if callErr != nil {
+				log.
+					WithError(callErr).
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					WithField("exec-id", instanceID).
+					Error("Failed to report task execution failure")
+			}
+			log.
+				WithError(err).
+				WithFields(goutils.UpdateCodePositionInTags(logTags)).
+				WithField("exec-id", instanceID).
+				Error("Task execution instance failed during processing")
 		}
-		log.
-			WithError(err).
-			WithFields(goutils.UpdateCodePositionInTags(logTags)).
-			WithField("exec-id", instanceID).
-			Error("Task execution instance failed during processing")
 	} else {
 		callErr := r.reportTaskExecutionProcessingCompleted(ctx, instanceID, timestamp)
 		if callErr != nil {
@@ -521,6 +576,7 @@ func (r *receiverImpl) Initialize(
 						dbCtx,
 						instance.ID,
 						"execution worker restarted before completion",
+						nil, // crash mid-run is retryable per the task's policy
 						time.Now().UTC(),
 					); err != nil {
 						return models.NewPersistenceError(
@@ -552,7 +608,11 @@ func (r *receiverImpl) Initialize(
 			WithFields(goutils.UpdateCodePositionInTags(logTags)).
 			Infof("Notify scheduler %d execution requests failed", len(failedReq))
 		for _, instanceID := range failedReq {
-			if err := r.reportTaskExecutionProcessingFailed(ctx, instanceID, currentTime); err != nil {
+			// A crash-orphaned instance defaults to retryable (nil disposition): a worker that
+			// died mid-run is exactly the case that should be retried per the task's policy.
+			if err := r.reportTaskExecutionProcessingFailed(
+				ctx, instanceID, nil, currentTime,
+			); err != nil {
 				return models.NewTaskReceiverError(
 					fmt.Sprintf(
 						"failed to report to scheduler execution instance '%s' failed", instanceID,
@@ -793,7 +853,7 @@ func (r *receiverImpl) processOneIPCRequest(
 			ctx,
 			func(dbCtx context.Context, dbClient db.Database) error {
 				if err := dbClient.MarkTaskExecFailed(
-					dbCtx, execRequest.InstanceID, submitErr.Error(), time.Now().UTC(),
+					dbCtx, execRequest.InstanceID, submitErr.Error(), nil, time.Now().UTC(),
 				); err != nil {
 					return models.NewPersistenceError(
 						fmt.Sprintf(

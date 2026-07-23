@@ -46,10 +46,6 @@ type stubExecutor struct {
 	submitCalls int
 }
 
-func (s *stubExecutor) RegisterTaskProcessor(string, models.TaskExecutionProcessor) error {
-	panic("RegisterTaskProcessor not expected in ProcessOneIPCRequest tests")
-}
-
 func (s *stubExecutor) ProcessExecutionInstance(_ context.Context, instanceID string) error {
 	s.submitCalls++
 	s.submittedID = instanceID
@@ -376,7 +372,7 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			DeleteBufferedMessage(mock.Anything, msg).
 			Return(nil)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		mockSender.EXPECT().
 			EnqueueMessage(mock.Anything, mock.Anything).
@@ -425,7 +421,7 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			DeleteBufferedMessage(mock.Anything, msg).
 			Return(nil)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
 			Return(models.NewSQLError("boom", simErr, false))
 
 		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)

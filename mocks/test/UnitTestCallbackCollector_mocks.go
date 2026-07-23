@@ -10,6 +10,7 @@ import (
 
 	"github.com/alwitt/goutils/redis"
 	"github.com/alwitt/tasking/common"
+	"github.com/alwitt/tasking/models"
 	"github.com/alwitt/tasking/task"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -202,8 +203,8 @@ func (_c *UnitTestCallbackCollector_NewRedisIPCMsgSender_Call) RunAndReturn(run 
 }
 
 // NewTaskExecutor provides a mock function for the type UnitTestCallbackCollector
-func (_mock *UnitTestCallbackCollector) NewTaskExecutor(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport) (task.Executor, error) {
-	ret := _mock.Called(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+func (_mock *UnitTestCallbackCollector) NewTaskExecutor(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport, processors map[string]models.TaskExecutionProcessor) (task.Executor, error) {
+	ret := _mock.Called(parentCtx, taskQueue, workerCount, requestBufferLen, support, processors)
 
 	if len(ret) == 0 {
 		panic("no return value specified for NewTaskExecutor")
@@ -211,18 +212,18 @@ func (_mock *UnitTestCallbackCollector) NewTaskExecutor(parentCtx context.Contex
 
 	var r0 task.Executor
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport) (task.Executor, error)); ok {
-		return returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport, map[string]models.TaskExecutionProcessor) (task.Executor, error)); ok {
+		return returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support, processors)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport) task.Executor); ok {
-		r0 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int, task.ExecutorSupport, map[string]models.TaskExecutionProcessor) task.Executor); ok {
+		r0 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support, processors)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(task.Executor)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int, task.ExecutorSupport) error); ok {
-		r1 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int, task.ExecutorSupport, map[string]models.TaskExecutionProcessor) error); ok {
+		r1 = returnFunc(parentCtx, taskQueue, workerCount, requestBufferLen, support, processors)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -240,11 +241,12 @@ type UnitTestCallbackCollector_NewTaskExecutor_Call struct {
 //   - workerCount int
 //   - requestBufferLen int
 //   - support task.ExecutorSupport
-func (_e *UnitTestCallbackCollector_Expecter) NewTaskExecutor(parentCtx interface{}, taskQueue interface{}, workerCount interface{}, requestBufferLen interface{}, support interface{}) *UnitTestCallbackCollector_NewTaskExecutor_Call {
-	return &UnitTestCallbackCollector_NewTaskExecutor_Call{Call: _e.mock.On("NewTaskExecutor", parentCtx, taskQueue, workerCount, requestBufferLen, support)}
+//   - processors map[string]models.TaskExecutionProcessor
+func (_e *UnitTestCallbackCollector_Expecter) NewTaskExecutor(parentCtx interface{}, taskQueue interface{}, workerCount interface{}, requestBufferLen interface{}, support interface{}, processors interface{}) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+	return &UnitTestCallbackCollector_NewTaskExecutor_Call{Call: _e.mock.On("NewTaskExecutor", parentCtx, taskQueue, workerCount, requestBufferLen, support, processors)}
 }
 
-func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Run(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Run(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport, processors map[string]models.TaskExecutionProcessor)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -266,12 +268,17 @@ func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Run(run func(parentCtx
 		if args[4] != nil {
 			arg4 = args[4].(task.ExecutorSupport)
 		}
+		var arg5 map[string]models.TaskExecutionProcessor
+		if args[5] != nil {
+			arg5 = args[5].(map[string]models.TaskExecutionProcessor)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
 		)
 	})
 	return _c
@@ -282,7 +289,7 @@ func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) Return(executor task.E
 	return _c
 }
 
-func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) RunAndReturn(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport) (task.Executor, error)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
+func (_c *UnitTestCallbackCollector_NewTaskExecutor_Call) RunAndReturn(run func(parentCtx context.Context, taskQueue string, workerCount int, requestBufferLen int, support task.ExecutorSupport, processors map[string]models.TaskExecutionProcessor) (task.Executor, error)) *UnitTestCallbackCollector_NewTaskExecutor_Call {
 	_c.Call.Return(run)
 	return _c
 }

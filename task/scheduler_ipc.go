@@ -292,7 +292,11 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			}
 
 		case models.IPCMsgTypeExecuteFailed:
-			// Task execution failed
+			// Task execution failed. The message carries the retry disposition, but the handler
+			// reads it from the persisted instance (FailureDisposition) rather than the message:
+			// the executor writes the column in the same step that sends this message, and that
+			// persisted value is the single source of truth - so the maintenance backstop, which
+			// has no message, reaches the same decision (DB is source of truth).
 			if err := s.worker.Submit(ctx, schedulerWorkReqTaskExecutionFailed{
 				InstanceID: typed.InstanceID, Timestamp: typed.Timestamp,
 			}); err != nil {

@@ -1887,16 +1887,16 @@ func (_c *Database_MarkTaskExecCancelled_Call) RunAndReturn(run func(ctx context
 }
 
 // MarkTaskExecFailed provides a mock function for the type Database
-func (_mock *Database) MarkTaskExecFailed(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time) error {
-	ret := _mock.Called(ctx, instanceID, errorMsg, terminatedAt)
+func (_mock *Database) MarkTaskExecFailed(ctx context.Context, instanceID string, errorMsg string, disposition *models.TaskFailureDispositionENUM, terminatedAt time.Time) error {
+	ret := _mock.Called(ctx, instanceID, errorMsg, disposition, terminatedAt)
 
 	if len(ret) == 0 {
 		panic("no return value specified for MarkTaskExecFailed")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, time.Time) error); ok {
-		r0 = returnFunc(ctx, instanceID, errorMsg, terminatedAt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *models.TaskFailureDispositionENUM, time.Time) error); ok {
+		r0 = returnFunc(ctx, instanceID, errorMsg, disposition, terminatedAt)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1912,12 +1912,13 @@ type Database_MarkTaskExecFailed_Call struct {
 //   - ctx context.Context
 //   - instanceID string
 //   - errorMsg string
+//   - disposition *models.TaskFailureDispositionENUM
 //   - terminatedAt time.Time
-func (_e *Database_Expecter) MarkTaskExecFailed(ctx interface{}, instanceID interface{}, errorMsg interface{}, terminatedAt interface{}) *Database_MarkTaskExecFailed_Call {
-	return &Database_MarkTaskExecFailed_Call{Call: _e.mock.On("MarkTaskExecFailed", ctx, instanceID, errorMsg, terminatedAt)}
+func (_e *Database_Expecter) MarkTaskExecFailed(ctx interface{}, instanceID interface{}, errorMsg interface{}, disposition interface{}, terminatedAt interface{}) *Database_MarkTaskExecFailed_Call {
+	return &Database_MarkTaskExecFailed_Call{Call: _e.mock.On("MarkTaskExecFailed", ctx, instanceID, errorMsg, disposition, terminatedAt)}
 }
 
-func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time)) *Database_MarkTaskExecFailed_Call {
+func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, instanceID string, errorMsg string, disposition *models.TaskFailureDispositionENUM, terminatedAt time.Time)) *Database_MarkTaskExecFailed_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1931,15 +1932,20 @@ func (_c *Database_MarkTaskExecFailed_Call) Run(run func(ctx context.Context, in
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 time.Time
+		var arg3 *models.TaskFailureDispositionENUM
 		if args[3] != nil {
-			arg3 = args[3].(time.Time)
+			arg3 = args[3].(*models.TaskFailureDispositionENUM)
+		}
+		var arg4 time.Time
+		if args[4] != nil {
+			arg4 = args[4].(time.Time)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -1950,7 +1956,7 @@ func (_c *Database_MarkTaskExecFailed_Call) Return(err error) *Database_MarkTask
 	return _c
 }
 
-func (_c *Database_MarkTaskExecFailed_Call) RunAndReturn(run func(ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time) error) *Database_MarkTaskExecFailed_Call {
+func (_c *Database_MarkTaskExecFailed_Call) RunAndReturn(run func(ctx context.Context, instanceID string, errorMsg string, disposition *models.TaskFailureDispositionENUM, terminatedAt time.Time) error) *Database_MarkTaskExecFailed_Call {
 	_c.Call.Return(run)
 	return _c
 }

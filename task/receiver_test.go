@@ -49,6 +49,9 @@ func baseReceiverParams(
 		Redis:              mockRedis,
 		IPCReceiverFactory: cbMock.NewRedisIPCMsgReceiver,
 		IPCSenderFactory:   cbMock.NewRedisIPCMsgSender,
+		Processors: map[string]map[string]models.TaskExecutionProcessor{
+			"unit-test-queue": {},
+		},
 	}
 }
 
@@ -65,6 +68,34 @@ func TestNewReceiver(t *testing.T) {
 
 		// Empty params fail required-field validation.
 		receiver, err := task.NewReceiver(utCtx, task.NewReceiverParams{})
+		assert.Nil(receiver)
+		assert.NotNil(err)
+		var badInput goutils.BadInputError
+		assert.True(
+			errors.As(err, &badInput), "expected BadInputError, got %T: %v", err, err,
+		)
+	})
+
+	t.Run("processor for unconfigured queue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		cbMock := mocktest.NewUnitTestCallbackCollector(t)
+		mockClient := mockdb.NewClient(t)
+		mockRedis := mockredis.NewClient(t)
+
+		// The IPC receiver factory succeeds for the one configured queue; the constructor
+		// must reject the params before wiring executors because a processor is bound to a
+		// queue this receiver does not serve.
+		cbMock.EXPECT().
+			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(mockcommon.NewIPCMessageReceive(t), nil)
+
+		params := baseReceiverParams(cbMock, mockClient, mockRedis)
+		params.Processors = map[string]map[string]models.TaskExecutionProcessor{
+			"not-a-configured-queue": {},
+		}
+
+		receiver, err := task.NewReceiver(utCtx, params)
 		assert.Nil(receiver)
 		assert.NotNil(err)
 		var badInput goutils.BadInputError
@@ -106,7 +137,7 @@ func TestNewReceiver(t *testing.T) {
 			Return(mockcommon.NewIPCMessageReceive(t), nil)
 		cbMock.EXPECT().
 			NewTaskExecutor(
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			).
 			Return(nil, simErr)
 
@@ -132,7 +163,7 @@ func TestNewReceiver(t *testing.T) {
 			Return(mockcommon.NewIPCMessageReceive(t), nil)
 		cbMock.EXPECT().
 			NewTaskExecutor(
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			).
 			Return(mocktask.NewExecutor(t), nil)
 		cbMock.EXPECT().
@@ -160,7 +191,7 @@ func TestNewReceiver(t *testing.T) {
 			Return(mockcommon.NewIPCMessageReceive(t), nil)
 		cbMock.EXPECT().
 			NewTaskExecutor(
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			).
 			Return(mocktask.NewExecutor(t), nil)
 		cbMock.EXPECT().

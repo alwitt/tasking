@@ -7,7 +7,6 @@ package mocktask
 import (
 	"context"
 
-	"github.com/alwitt/tasking/models"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -91,63 +90,6 @@ func (_c *Executor_ProcessExecutionInstance_Call) Return(err error) *Executor_Pr
 }
 
 func (_c *Executor_ProcessExecutionInstance_Call) RunAndReturn(run func(ctx context.Context, instanceID string) error) *Executor_ProcessExecutionInstance_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// RegisterTaskProcessor provides a mock function for the type Executor
-func (_mock *Executor) RegisterTaskProcessor(taskName string, processor models.TaskExecutionProcessor) error {
-	ret := _mock.Called(taskName, processor)
-
-	if len(ret) == 0 {
-		panic("no return value specified for RegisterTaskProcessor")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, models.TaskExecutionProcessor) error); ok {
-		r0 = returnFunc(taskName, processor)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// Executor_RegisterTaskProcessor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RegisterTaskProcessor'
-type Executor_RegisterTaskProcessor_Call struct {
-	*mock.Call
-}
-
-// RegisterTaskProcessor is a helper method to define mock.On call
-//   - taskName string
-//   - processor models.TaskExecutionProcessor
-func (_e *Executor_Expecter) RegisterTaskProcessor(taskName interface{}, processor interface{}) *Executor_RegisterTaskProcessor_Call {
-	return &Executor_RegisterTaskProcessor_Call{Call: _e.mock.On("RegisterTaskProcessor", taskName, processor)}
-}
-
-func (_c *Executor_RegisterTaskProcessor_Call) Run(run func(taskName string, processor models.TaskExecutionProcessor)) *Executor_RegisterTaskProcessor_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
-		if args[0] != nil {
-			arg0 = args[0].(string)
-		}
-		var arg1 models.TaskExecutionProcessor
-		if args[1] != nil {
-			arg1 = args[1].(models.TaskExecutionProcessor)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *Executor_RegisterTaskProcessor_Call) Return(err error) *Executor_RegisterTaskProcessor_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *Executor_RegisterTaskProcessor_Call) RunAndReturn(run func(taskName string, processor models.TaskExecutionProcessor) error) *Executor_RegisterTaskProcessor_Call {
 	_c.Call.Return(run)
 	return _c
 }

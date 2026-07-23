@@ -62,6 +62,22 @@ func NewTaskPreprocessError(message string, core error, getCallStack bool) TaskP
 	return TaskPreprocessError{BaseError: base}
 }
 
+// NonRecoverableError a task execution failure a TaskExecutionProcessor considers permanent:
+// retrying it will not help (e.g. malformed input, a resource that will never exist). A processor
+// wraps its returned error in a NonRecoverableError to opt the failure out of the task's retry
+// policy; the failure is still an ordinary task-execution failure (reported as EXECUTE_FAILED with
+// a NON_RETRYABLE disposition), distinct from an engine-level failure.
+type NonRecoverableError struct{ goutils.BaseError }
+
+// NewNonRecoverableError builds a NonRecoverableError, optionally capturing the call stack.
+func NewNonRecoverableError(message string, core error, getCallStack bool) NonRecoverableError {
+	base := goutils.BaseError{Name: "NonRecoverableError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return NonRecoverableError{BaseError: base}
+}
+
 // TaskExecutionError error encountered during task processing
 type TaskExecutionError struct{ goutils.BaseError }
 

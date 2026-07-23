@@ -272,6 +272,25 @@ func (TaskExecutionClassENUM) Values() []TaskExecutionClassENUM {
 	}
 }
 
+// TaskFailureDispositionENUM whether a failed task execution should be retried. It is set only
+// on an execution that failed during processing; a nil disposition is treated as RETRYABLE.
+type TaskFailureDispositionENUM string
+
+const (
+	// TaskFailureDispositionRetryable the failure may be retried per the task's retry policy
+	TaskFailureDispositionRetryable TaskFailureDispositionENUM = "RETRYABLE"
+	// TaskFailureDispositionNonRetryable the failure is permanent; the task must not be retried
+	TaskFailureDispositionNonRetryable TaskFailureDispositionENUM = "NON_RETRYABLE"
+)
+
+// Values all valid TaskFailureDispositionENUM values
+func (TaskFailureDispositionENUM) Values() []TaskFailureDispositionENUM {
+	return []TaskFailureDispositionENUM{
+		TaskFailureDispositionRetryable,
+		TaskFailureDispositionNonRetryable,
+	}
+}
+
 // TaskExecutionStateENUM task execution state ENUM value
 type TaskExecutionStateENUM string
 
@@ -360,6 +379,12 @@ type TaskExecution struct {
 
 	// ErrorMessage in case of processing failure, the error message
 	ErrorMessage *string `json:"error_msg,omitempty" gorm:"column:error_msg;default:null;" validate:"omitempty"`
+
+	// FailureDisposition in case of processing failure, whether the failure is retryable. Nil
+	// until the instance fails, and a nil value is treated as retryable. Set to NON_RETRYABLE
+	// when a processor returned a NonRecoverableError, so the scheduler (and the maintenance
+	// backstop, which reads this persisted value) skips the retry.
+	FailureDisposition *TaskFailureDispositionENUM `json:"failure_disposition,omitempty" gorm:"column:failure_disposition;default:null;" validate:"omitempty,task_failure_disposition"`
 
 	// Deadline if specified, the execution instance must be completed by this deadline
 	Deadline *time.Time `json:"deadline,omitempty" gorm:"column:deadline;default:null"`
@@ -491,7 +516,7 @@ func (e TaskExecution) HasEnded() bool {
 // ======================================================================================
 // Task execution processor
 
-// TaskExecutionProcessor execution processor for a particular
+// TaskExecutionProcessor execution processor for a particular task name
 type TaskExecutionProcessor interface {
 	/*
 		ProcessTaskExecution process a task specific to this processor

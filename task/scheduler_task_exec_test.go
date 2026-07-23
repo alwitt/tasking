@@ -639,6 +639,41 @@ func TestProcessTaskExecutionFailed(t *testing.T) {
 		assert.Nil(err)
 	})
 
+	t.Run("active task: non-retryable disposition skips retry", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		s := newProcessTestScheduler(mockClient, nil)
+
+		// Generous retry budget: were it retryable, NextDelay would be > 0 and a retry
+		// instance would be defined. The persisted NON_RETRYABLE disposition must override
+		// that and fail the task instead. This also covers the maintenance backstop, which
+		// invokes this same handler and relies on the persisted column (a lost EXECUTE_FAILED
+		// IPC must not resurrect a non-retryable failure as a retry).
+		task := activeTaskWithRetries(
+			models.TaskRetryParameters{MaxRetries: 5, InitialDelaySec: 5, Factor: 2},
+		)
+		instance := failedInstance(task)
+		nonRetryable := models.TaskFailureDispositionNonRetryable
+		instance.FailureDisposition = &nonRetryable
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		expectFetch(mockDatabase, instance, task)
+		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
+		mockDatabase.EXPECT().
+			ListTaskExecutions(mock.Anything, task.ID, retryFilter).
+			Return(nFailed(1), nil)
+		// Task is failed outright; no retry instance is defined (DefineNewTaskRetryExecInstance
+		// is intentionally NOT expected, so the mock would fail if it were called).
+		mockDatabase.EXPECT().MarkTaskFailed(mock.Anything, task.ID).Return(nil)
+
+		err := s.processTaskExecutionFailed(utCtx, instance.ID, time.Now().UTC())
+		assert.Nil(err)
+	})
+
 	t.Run("active task: defining the retry instance fails", func(t *testing.T) {
 		assert := assert.New(t)
 
@@ -715,7 +750,7 @@ func TestProcessTaskExecutionTimedOut(t *testing.T) {
 		mockDatabase *mockdb.Database, instance models.TaskExecution, task models.Task,
 	) {
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
 		mockDatabase.EXPECT().MarkTaskTimedOut(mock.Anything, task.ID).Return(nil)
@@ -802,7 +837,7 @@ func TestProcessTaskExecutionTimedOut(t *testing.T) {
 			RunAndReturn(runTxAgainst(mockDatabase))
 		expectFetch(mockDatabase, instance, task)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything, mock.Anything).
 			Return(simErr)
 
 		err := s.processTaskExecutionTimedOut(utCtx, instance.ID, time.Now().UTC())
@@ -826,7 +861,7 @@ func TestProcessTaskExecutionTimedOut(t *testing.T) {
 			RunAndReturn(runTxAgainst(mockDatabase))
 		expectFetch(mockDatabase, instance, task)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(simErr)
 
@@ -851,7 +886,7 @@ func TestProcessTaskExecutionTimedOut(t *testing.T) {
 			RunAndReturn(runTxAgainst(mockDatabase))
 		expectFetch(mockDatabase, instance, task)
 		mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, instance.ID, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		mockDatabase.EXPECT().MarkTaskExecFinalized(mock.Anything, instance.ID).Return(nil)
 		mockDatabase.EXPECT().MarkTaskTimedOut(mock.Anything, task.ID).Return(simErr)

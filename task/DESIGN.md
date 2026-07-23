@@ -116,6 +116,14 @@ real Redis-backed factories (`common.NewRedisIPCMessage*`, `NewExecutor`); tests
 This is how the components stay decoupled and independently testable despite the tight
 choreography between them.
 
+**Processors are supplied at construction, not registered at runtime.** The app hands the
+`Receiver` a `map[queueName]map[taskName]TaskExecutionProcessor` (`NewReceiverParams.Processors`);
+the constructor validates it (every processor's queue must be a configured queue, no nil
+processors) and passes each queue's inner map to that queue's `NewExecutor`. The mapping is then
+immutable for the component's lifetime — there is no `RegisterTaskProcessor`, so no lock guarding
+it and no window where a `PENDING_INSTANCE` can arrive before its processor is registered. A task
+name that still has no processor at dispatch time is treated as an engine failure (§8).
+
 ## 4. Task lifecycle
 
 State machine (`models.Task.ValidNextState`):
@@ -173,7 +181,7 @@ is why `models.HasEnded()` is the *union* of "at or past" any of them, distinct 
 | → **ENQUEUED**                 | Scheduler | `MarkTaskExecQueued` + send `PENDING_INSTANCE` |
 | → **ACQUIRED**                 | Receiver  | `MarkTaskExecAcquired` (records `worker_name`) |
 | → **PROCESSING**               | Executor  | `MarkTaskExecProcessing` (pre-processing) |
-| → **PROCESSED** / **FAILED**   | Executor  | post-processing `defer` (captures `TerminalState`) |
+| → **PROCESSED** / **FAILED**   | Executor  | post-processing `defer` (captures `TerminalState`; on FAILED, also `FailureDisposition` — see §8.1) |
 | → **FINALIZED**                | Scheduler | `MarkTaskExecFinalized` (after deciding task's next step) |
 | → **CANCELLED**                | Scheduler | `MarkTaskExecCancelled` (parent cancelled / timed out) |
 
@@ -276,12 +284,34 @@ and continue.
 Two distinct failure kinds with different semantics:
 
 - **Execution failure** (`EXECUTE_FAILED`, `SystemEventTypeFailedTask`) — the task's own
-  processor returned an error. **Retryable** per the task's retry policy.
+  processor returned an error. **Retryable** per the task's retry policy — *unless* the failure
+  carries a non-retryable disposition (see below), in which case the task is failed outright with
+  no retry, but it is still an *execution* failure (same message type, same `FailedTask` audit
+  event).
 - **Engine failure** (`ENGINE_FAILED`, `SystemEventTypeEngineFailedTask`) — the framework
-  itself couldn't operate: the receiver couldn't claim the instance, or couldn't submit it to
-  the executor. **Not retried** — `processTaskExecutionEngineFailed` finalizes the instance,
-  fails the task, and writes an audit event atomically. The parent app is expected to review
-  these.
+  itself couldn't operate: the receiver couldn't claim the instance, couldn't submit it to the
+  executor, or the executor's queue has **no registered processor** for the task name (a misrouted
+  `PENDING_INSTANCE`). **Not retried** — `processTaskExecutionEngineFailed` finalizes the instance,
+  fails the task, and writes an audit event atomically. The parent app is expected to review these.
+
+### 8.1 Retry disposition — opting an execution failure out of retry
+
+An execution failure carries a **`FailureDisposition`** (`RETRYABLE` / `NON_RETRYABLE`; nil is
+treated as retryable). A `TaskExecutionProcessor` opts a failure out of retry by wrapping its
+returned error in a `models.NonRecoverableError` (e.g. malformed input, a resource that will never
+exist). The executor detects it with `errors.As` and, when marking the instance FAILED, persists
+`NON_RETRYABLE` on the `TaskExecution` row **and** stamps it on the `EXECUTE_FAILED` IPC message.
+
+The persisted column is the source of truth: `processTaskExecutionFailed` reads it (not the
+message) via the shared `decideExecutionRetry` helper, so the maintenance backstop — which has no
+message — reaches the same decision. A lost `EXECUTE_FAILED` poke therefore cannot resurrect a
+non-retryable failure as a retry. `decideExecutionRetry` is the single point both the IPC handler
+and the maintenance sweep call, so the "skip retry on NON_RETRYABLE" rule cannot drift between
+them (see §6.2/§6.3).
+
+The classification "which error → which report" lives in `receiver.onTaskComplete`: a
+`TaskExecutorError` (the executor's marker for a missing processor) → `ENGINE_FAILED`; anything
+else → `EXECUTE_FAILED`, with `NON_RETRYABLE` iff a `NonRecoverableError` is in the chain.
 
 ## 9. The seam into `notify`
 
@@ -301,7 +331,9 @@ reliability model.
 - **`TaskSchedulerConfig`** — maintenance interval (≥ 10s); scheduler queue name; task-name →
   execution-queue mappings (so the scheduler knows which queue to poke per task name).
 - **`TaskReceiverConfig`** — receiver name; the queues it serves (each with worker count and
-  buffer length); scheduler queue name (to report outcomes).
+  buffer length); scheduler queue name (to report outcomes). The **processors** each queue runs
+  are *not* config — they are behavior, supplied to `NewReceiver` via `NewReceiverParams.Processors`
+  (§3.1), so the declarative config stays free of Go interface values.
 
 Task-name → queue mapping is the routing fabric: the scheduler sends `PENDING_INSTANCE` to the
 queue configured for that task's name, and the receiver serving that queue picks it up.

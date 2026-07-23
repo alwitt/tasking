@@ -360,10 +360,16 @@ type Database interface {
 			@param ctx context.Context - execution context
 			@param instanceID string - task exec instance ID
 			@param errorMsg string - error message associated with the failure
+			@param disposition *models.TaskFailureDispositionENUM - whether the failure is retryable
+			    (nil = retryable)
 			@param terminatedAt time.Time - timestamp when the instance reached this terminal state
 	*/
 	MarkTaskExecFailed(
-		ctx context.Context, instanceID string, errorMsg string, terminatedAt time.Time,
+		ctx context.Context,
+		instanceID string,
+		errorMsg string,
+		disposition *models.TaskFailureDispositionENUM,
+		terminatedAt time.Time,
 	) error
 
 	/*

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,13 @@ const (
 	// workflow scheduler subscribes to notify:creator:<this> to receive step-task feedback,
 	// so any foreign task using it would be misread as workflow step feedback.
 	WorkflowExecutionTaskCreator = "__TASKING_WORKFLOW_ENGINE_SCHEDULER__"
+
+	// WorkflowExecutionTaskName the hard coded name used to register the workflow
+	// step execution Task process handler with the Task Engine.
+	//
+	// **IMPORTANT:** Library users must never register their own Task process handler
+	// under this name, as that breaks the workflow engine.
+	WorkflowExecutionTaskName = "__EXECUTE_WORKFLOW_STEP__"
 )
 
 // WorkflowStateENUM workflow state ENUM value type
@@ -431,4 +439,19 @@ func (p NewWorkflowParameter) IsValid(validator *validator.Validate) error {
 	}
 
 	return nil
+}
+
+// ======================================================================================
+// Workflow step execution processor
+
+// WorkflowStepProcessor workflow step processor for a particular workflow step type
+type WorkflowStepProcessor interface {
+	/*
+		ProcessTaskExecution process a workflow step of a particular Type.
+
+			@param ctx context.Context - execution context
+			@param workflowEntry Workflow - workflow entry
+			@param stepEntry WorkflowStep - workflow step entry
+	*/
+	ProcessWorkflowStep(ctx context.Context, workflowEntry Workflow, stepEntry WorkflowStep) error
 }

@@ -889,7 +889,7 @@ func TestTaskExecDefineNewTaskRetryExecInstance(t *testing.T) {
 			if err := dbClient.MarkTaskExecQueued(ctx, failedExec.ID); err != nil {
 				return err
 			}
-			return dbClient.MarkTaskExecFailed(ctx, failedExec.ID, "boom", time.Now().UTC())
+			return dbClient.MarkTaskExecFailed(ctx, failedExec.ID, "boom", nil, time.Now().UTC())
 		},
 	))
 
@@ -1049,9 +1049,10 @@ func TestTaskExecStateTransitions(t *testing.T) {
 			},
 		))
 		failedAt := time.Now().UTC().Truncate(time.Millisecond)
+		nonRetryable := models.TaskFailureDispositionNonRetryable
 		assert.Nil(persistence.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
-				return dbClient.MarkTaskExecFailed(ctx, id, "processing blew up", failedAt)
+				return dbClient.MarkTaskExecFailed(ctx, id, "processing blew up", &nonRetryable, failedAt)
 			},
 		))
 		failed := readExec(id)
@@ -1064,6 +1065,9 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		assert.Equal(models.TaskExecutionStateFailed, *failed.TerminalState)
 		assert.NotNil(failed.TerminatedAt)
 		assert.WithinDuration(failedAt, *failed.TerminatedAt, time.Second)
+		// retry disposition persisted
+		assert.NotNil(failed.FailureDisposition)
+		assert.Equal(models.TaskFailureDispositionNonRetryable, *failed.FailureDisposition)
 
 		// FAILED can be finalized
 		assert.Nil(persistence.UseDatabaseInTransaction(
@@ -1073,6 +1077,9 @@ func TestTaskExecStateTransitions(t *testing.T) {
 		))
 		finalized := readExec(id)
 		assert.Equal(models.TaskExecutionStateFinalized, finalized.ExecutionState)
+		// disposition survives finalization
+		assert.NotNil(finalized.FailureDisposition)
+		assert.Equal(models.TaskFailureDispositionNonRetryable, *finalized.FailureDisposition)
 		// terminal outcome survives finalization
 		assert.NotNil(finalized.TerminalState)
 		assert.Equal(models.TaskExecutionStateFailed, *finalized.TerminalState)
@@ -1264,7 +1271,7 @@ func TestTaskExecListAllExecutions(t *testing.T) {
 		if err := dbClient.MarkTaskExecQueued(ctx, failedForRetry.ID); err != nil {
 			return err
 		}
-		return dbClient.MarkTaskExecFailed(ctx, failedForRetry.ID, "boom", time.Now().UTC())
+		return dbClient.MarkTaskExecFailed(ctx, failedForRetry.ID, "boom", nil, time.Now().UTC())
 	})
 
 	var retryInst models.TaskExecution

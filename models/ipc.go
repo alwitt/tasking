@@ -132,6 +132,9 @@ type IPCMessageExecuteInstance struct {
 	BaseIPCMessage
 	// InstanceID ID of the task execution instance referenced
 	InstanceID string `json:"instance_id" validate:"required"`
+	// Disposition for an EXECUTE_FAILED message, whether the failure is retryable. Nil (the only
+	// value for non-failure messages, and the default for a failure) is treated as retryable.
+	Disposition *TaskFailureDispositionENUM `json:"disposition,omitempty" validate:"omitempty,task_failure_disposition"`
 }
 
 // StringPayload return its payload as a string
@@ -203,9 +206,13 @@ func PrepareIPCMsgTaskExecutionProcessSucceeded(
 	}
 }
 
-// PrepareIPCMsgTaskExecutionProcessFailed build IPC message `IPC_TASK_ENG_EXECUTE_FAILED`
+// PrepareIPCMsgTaskExecutionProcessFailed build IPC message `IPC_TASK_ENG_EXECUTE_FAILED`. A nil
+// disposition is treated as retryable by the scheduler.
 func PrepareIPCMsgTaskExecutionProcessFailed(
-	sender string, instanceID string, timestamp time.Time,
+	sender string,
+	instanceID string,
+	disposition *TaskFailureDispositionENUM,
+	timestamp time.Time,
 ) goutilsRedis.QueueMessageEnvelope {
 	return IPCMessageExecuteInstance{
 		BaseIPCMessage: BaseIPCMessage{
@@ -214,7 +221,8 @@ func PrepareIPCMsgTaskExecutionProcessFailed(
 			Sender:    sender,
 			Timestamp: timestamp,
 		},
-		InstanceID: instanceID,
+		InstanceID:  instanceID,
+		Disposition: disposition,
 	}
 }
 

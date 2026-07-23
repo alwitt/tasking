@@ -582,6 +582,7 @@ func (c *databaseImpl) updateTaskExecutionState(
 	nextState models.TaskExecutionStateENUM,
 	workerName *string,
 	errorMsg *string,
+	disposition *models.TaskFailureDispositionENUM,
 	terminatedAt *time.Time,
 ) error {
 	entry, err := c.getTaskExecDBEntry(instanceID)
@@ -618,7 +619,13 @@ func (c *databaseImpl) updateTaskExecutionState(
 		theUpdate["terminated_at"] = terminatedAt
 
 	case models.TaskExecutionStateFailed:
-		fallthrough
+		theUpdate["error_msg"] = errorMsg
+		theUpdate["terminal_state"] = nextState
+		theUpdate["terminated_at"] = terminatedAt
+		// Persist the retry disposition (nil = retryable) so the scheduler's maintenance
+		// backstop honors a NON_RETRYABLE outcome even if the EXECUTE_FAILED IPC is lost.
+		theUpdate["failure_disposition"] = disposition
+
 	case models.TaskExecutionStateCancelled:
 		theUpdate["error_msg"] = errorMsg
 		theUpdate["terminal_state"] = nextState
@@ -642,7 +649,9 @@ MarkTaskExecQueued mark a task execution instance is enqueued
 	@param instanceID string - task exec instance ID
 */
 func (c *databaseImpl) MarkTaskExecQueued(_ context.Context, instanceID string) error {
-	return c.updateTaskExecutionState(instanceID, models.TaskExecutionStateEnqueued, nil, nil, nil)
+	return c.updateTaskExecutionState(
+		instanceID, models.TaskExecutionStateEnqueued, nil, nil, nil, nil,
+	)
 }
 
 /*
@@ -656,7 +665,7 @@ func (c *databaseImpl) MarkTaskExecAcquired(
 	_ context.Context, instanceID string, workerName string,
 ) error {
 	return c.updateTaskExecutionState(
-		instanceID, models.TaskExecutionStateAcquired, &workerName, nil, nil,
+		instanceID, models.TaskExecutionStateAcquired, &workerName, nil, nil, nil,
 	)
 }
 
@@ -667,7 +676,9 @@ MarkTaskExecProcessing mark a task execution instance is being processed
 	@param instanceID string - task exec instance ID
 */
 func (c *databaseImpl) MarkTaskExecProcessing(_ context.Context, instanceID string) error {
-	return c.updateTaskExecutionState(instanceID, models.TaskExecutionStateProcessing, nil, nil, nil)
+	return c.updateTaskExecutionState(
+		instanceID, models.TaskExecutionStateProcessing, nil, nil, nil, nil,
+	)
 }
 
 /*
@@ -681,7 +692,7 @@ func (c *databaseImpl) MarkTaskExecProcessed(
 	_ context.Context, instanceID string, terminatedAt time.Time,
 ) error {
 	return c.updateTaskExecutionState(
-		instanceID, models.TaskExecutionStateProcessed, nil, nil, &terminatedAt,
+		instanceID, models.TaskExecutionStateProcessed, nil, nil, nil, &terminatedAt,
 	)
 }
 
@@ -691,13 +702,19 @@ MarkTaskExecFailed mark a task execution instance is failed to process
 	@param ctx context.Context - execution context
 	@param instanceID string - task exec instance ID
 	@param errorMsg string - error message associated with the failure
+	@param disposition *models.TaskFailureDispositionENUM - whether the failure is retryable
+	    (nil = retryable)
 	@param terminatedAt time.Time - timestamp when the instance reached this terminal state
 */
 func (c *databaseImpl) MarkTaskExecFailed(
-	_ context.Context, instanceID string, errorMsg string, terminatedAt time.Time,
+	_ context.Context,
+	instanceID string,
+	errorMsg string,
+	disposition *models.TaskFailureDispositionENUM,
+	terminatedAt time.Time,
 ) error {
 	return c.updateTaskExecutionState(
-		instanceID, models.TaskExecutionStateFailed, nil, &errorMsg, &terminatedAt,
+		instanceID, models.TaskExecutionStateFailed, nil, &errorMsg, disposition, &terminatedAt,
 	)
 }
 
@@ -708,7 +725,9 @@ MarkTaskExecFinalized mark a task execution instance is finalized
 	@param instanceID string - task exec instance ID
 */
 func (c *databaseImpl) MarkTaskExecFinalized(_ context.Context, instanceID string) error {
-	return c.updateTaskExecutionState(instanceID, models.TaskExecutionStateFinalized, nil, nil, nil)
+	return c.updateTaskExecutionState(
+		instanceID, models.TaskExecutionStateFinalized, nil, nil, nil, nil,
+	)
 }
 
 /*
@@ -723,6 +742,6 @@ func (c *databaseImpl) MarkTaskExecCancelled(
 	_ context.Context, instanceID string, cancelMsg string, terminatedAt time.Time,
 ) error {
 	return c.updateTaskExecutionState(
-		instanceID, models.TaskExecutionStateCancelled, nil, &cancelMsg, &terminatedAt,
+		instanceID, models.TaskExecutionStateCancelled, nil, &cancelMsg, nil, &terminatedAt,
 	)
 }

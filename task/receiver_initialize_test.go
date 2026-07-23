@@ -68,7 +68,7 @@ func newInitTestReceiver(t *testing.T) initTestReceiver {
 		NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(ipcReceiver, nil)
 	cbMock.EXPECT().
-		NewTaskExecutor(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		NewTaskExecutor(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(executor, nil)
 	cbMock.EXPECT().
 		NewRedisIPCMsgSender(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -348,10 +348,10 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id1, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id1, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id2, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id2, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 
 		notified := map[string]bool{}
@@ -403,7 +403,7 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything, mock.Anything).
 			Return(simErr)
 
 		err := tr.receiver.Initialize(utCtx, tr.mockDatabase)
@@ -427,7 +427,7 @@ func TestInitializeListOwnedAndNotify(t *testing.T) {
 			ListAllExecutions(mock.Anything, mock.Anything).
 			Return(owned, nil)
 		tr.mockDatabase.EXPECT().
-			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything).
+			MarkTaskExecFailed(mock.Anything, id, mock.Anything, mock.Anything, mock.Anything).
 			Return(nil)
 		tr.sender.EXPECT().
 			EnqueueMessage(mock.Anything, mock.Anything).

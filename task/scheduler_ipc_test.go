@@ -634,7 +634,7 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h := newIPCRequestTestScheduler(t)
 		instanceID := ulid.Make().String()
 		msg := models.PrepareIPCMsgTaskExecutionProcessFailed(
-			"unit-test", instanceID, time.Now().UTC(),
+			"unit-test", instanceID, nil, time.Now().UTC(),
 		)
 
 		h.ipcReceiver.EXPECT().

@@ -7,6 +7,7 @@ import (
 
 	goutilsRedis "github.com/alwitt/goutils/redis"
 	"github.com/alwitt/tasking/common"
+	"github.com/alwitt/tasking/models"
 	"github.com/alwitt/tasking/task"
 )
 
@@ -22,6 +23,7 @@ type UnitTestCallbackCollector interface {
 		workerCount int,
 		requestBufferLen int,
 		support task.ExecutorSupport,
+		processors map[string]models.TaskExecutionProcessor,
 	) (task.Executor, error)
 
 	// NewRedisIPCMsgReceiver factory function for defining new Redis based IPC message receivers
