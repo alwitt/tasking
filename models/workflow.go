@@ -442,6 +442,46 @@ func (p NewWorkflowParameter) IsValid(validator *validator.Validate) error {
 }
 
 // ======================================================================================
+// Workflow step execution task parameter
+
+// TaskParameterExecuteWorkflowStep the task Parameters payload for a WorkflowExecutionTaskName
+// (__EXECUTE_WORKFLOW_STEP__) task. It carries only the workflow step ID; the Step Runner loads
+// the step (and derives its parent workflow from the step's WorkflowID) from this ID. This is
+// Runner-owned plumbing set by the workflow scheduler - the application never authors or reads it.
+//
+// This is distinct from WorkflowStep.Parameters / WorkflowStep.Metadata, which are opaque to the
+// Runner and passed through untouched to the per-Type WorkflowStepProcessor.
+type TaskParameterExecuteWorkflowStep struct {
+	// StepID the workflow step to execute
+	StepID string `json:"step_id" validate:"required"`
+}
+
+/*
+ParseTaskParameterExecuteWorkflowStep parse and validate the task Parameters payload of a
+WorkflowExecutionTaskName task into a TaskParameterExecuteWorkflowStep.
+
+	@param raw datatypes.JSON - the raw task Parameters blob
+	@param v *validator.Validate - validator to check the parsed payload
+	@returns the parsed step-execution task parameter
+*/
+func ParseTaskParameterExecuteWorkflowStep(
+	raw datatypes.JSON, v *validator.Validate,
+) (TaskParameterExecuteWorkflowStep, error) {
+	var parsed TaskParameterExecuteWorkflowStep
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return TaskParameterExecuteWorkflowStep{}, goutils.NewValidationError(
+			"workflow step execution task parameter is not valid JSON", err, true,
+		)
+	}
+	if err := v.Struct(&parsed); err != nil {
+		return TaskParameterExecuteWorkflowStep{}, goutils.NewValidationError(
+			"workflow step execution task parameter is not valid", err, true,
+		)
+	}
+	return parsed, nil
+}
+
+// ======================================================================================
 // Workflow step execution processor
 
 // WorkflowStepProcessor workflow step processor for a particular workflow step type

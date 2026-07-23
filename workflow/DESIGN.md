@@ -319,11 +319,13 @@ the overwhelmingly common misconfiguration at the moment it is introduced.
 The task the scheduler submits carries, as its task `Parameters`, only the **workflow step
 ID** (`TaskParameterExecuteWorkflowStep`). On invocation the Runner:
 
-1. Parses the task `Parameters` to recover the step ID.
+1. Parses the task `Parameters` to recover the step ID. **Malformed → `NonRecoverableError`**
+   (see below): the task `Parameters` are Runner-owned plumbing the scheduler wrote, so a blob
+   that won't parse is a wiring/code bug retrying can never fix.
 2. Loads the `WorkflowStep` by ID, and its parent `Workflow` (from `step.WorkflowID` — the
    scheduler does not pass the workflow ID; the Runner derives it, so the two can never
    disagree).
-3. Looks up `handlers[step.Type]`. **Missing → `MissingHandler` error** (see below).
+3. Looks up `handlers[step.Type]`. **Missing → `NonRecoverableError`** (see below).
 4. Invokes `handler.ProcessWorkflowStep(ctx, workflow, step)` and returns its result as the
    task's outcome.
 
@@ -342,27 +344,37 @@ state; feedback to the workflow scheduler flows entirely through the `notify` pa
 
 An error out of `ProcessTaskExecution` reaches the task engine as a plain `error`; the task
 engine cannot (and by [Invariant 6](#design-invariants) must not) tell *why* the step failed.
-Two error namespaces converge here, and their retry treatment differs:
+Two error namespaces converge here, and their retry treatment differs. In the implementation the
+Runner tags each failure with a concrete type: **retryable** failures use `StepExecutionError`
+(handler failed) or `StepPreprocessError` (DB read failed); **non-retryable** failures wrap in
+`models.NonRecoverableError`.
 
-- **Workflow step processor error** (the registered `WorkflowStepProcessor` failed — e.g. a
-  remote server timed out) and **Runner-internal transient error** (e.g. the DB read of the
-  step/workflow failed): both are potentially **transient**, so both are returned verbatim
-  and are **subject to the task engine's normal per-attempt retry** using the step's
-  `RetryParams`. This is precisely the per-attempt retry the design wants the task engine to
-  own; the Runner does not suppress it.
-- **`MissingHandler`** (no `WorkflowStepProcessor` is registered for `step.Type`): a
-  **configuration error, never transient** — retrying cannot make a handler appear. The Runner
-  returns a distinct `MissingHandler` error, and the task engine **bypasses retry** for it,
-  failing the task immediately. The step then goes `FAILED` promptly (its reason captured in
-  `WorkflowStep.ErrorMessage`), rather than burning the full retry budget on a hopeless attempt.
+- **Retryable** — **Workflow step processor error** (the registered `WorkflowStepProcessor`
+  failed — e.g. a remote server timed out; wrapped in `StepExecutionError`) and
+  **Runner-internal transient error** (e.g. the DB read of the step/workflow failed; wrapped in
+  `StepPreprocessError`): both are potentially **transient**, so both are returned and are
+  **subject to the task engine's normal per-attempt retry** using the step's `RetryParams`. This
+  is precisely the per-attempt retry the design wants the task engine to own; the Runner does not
+  suppress it. (The wrappers carry the underlying error as `Core`, so `errors.As` still sees
+  through them.)
+- **Non-retryable** — **Malformed task `Parameters`** (the step-ID blob won't parse) and **no
+  handler for `step.Type`** (no `WorkflowStepProcessor` registered for the step's `Type`): both
+  are **configuration/wiring errors, never transient** — retrying cannot make a malformed blob
+  parse or a missing handler appear.
+  The Runner returns its error wrapped in a **`models.NonRecoverableError`**, the task engine's
+  standard signal that a processor failure must not be retried. The executor detects it (via
+  `errors.As`, even wrapped in the executor's own `TaskExecutionError`) and persists a
+  `NON_RETRYABLE` failure disposition on the execution instance; the scheduler's
+  `decideExecutionRetry` then short-circuits to "no retry" regardless of remaining budget,
+  marking the task `FAILED` immediately (see [`task/DESIGN.md` §8](../task/DESIGN.md)). The step
+  then goes `FAILED` promptly (its reason captured in `WorkflowStep.ErrorMessage`), rather than
+  burning the full retry budget on a hopeless attempt.
 
-  > **Task-engine dependency.** For the task engine to *bypass* retry on `MissingHandler`, a
-  > processor must be able to signal "do not retry this" out of `ProcessTaskExecution`, and the
-  > task scheduler must honor it. The task engine's current retry path does not yet distinguish
-  > a non-retryable processor error, and its processor registration is not yet construct-time
-  > (`Executor.RegisterTaskProcessor` is a post-construction call). Both are **task-engine
-  > changes tracked separately**; this section states the contract the workflow engine relies
-  > on, not its task-engine implementation.
+  This needs **no workflow-specific task-engine machinery** — `NonRecoverableError` and the
+  `NON_RETRYABLE` disposition are a generic task-engine facility any processor may use, and the
+  Step Runner is simply one such processor. It keeps [Invariant 6](#design-invariants) intact:
+  the task engine never learns that "malformed params" or "no handler" are *workflow* concepts,
+  only that this processor returned a non-retryable failure.
 
 #### Failure history and its retention
 

@@ -191,3 +191,36 @@ func NewTaskPostprocessError(message string, core error, getCallStack bool) Task
 	}
 	return TaskPostprocessError{BaseError: base}
 }
+
+// ======================================================================================
+// Workflow Step Runner Errors
+
+// StepPreprocessError error encountered during workflow step execution pre-processing: the
+// Step Runner's DB lookup of the workflow step or its parent workflow. Potentially transient
+// (e.g. a failed DB read), so it is returned verbatim and left subject to the task engine's
+// normal per-attempt retry - it is deliberately NOT wrapped in a NonRecoverableError.
+type StepPreprocessError struct{ goutils.BaseError }
+
+// NewStepPreprocessError builds a StepPreprocessError, optionally capturing the call stack.
+func NewStepPreprocessError(message string, core error, getCallStack bool) StepPreprocessError {
+	base := goutils.BaseError{Name: "StepPreprocessError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return StepPreprocessError{BaseError: base}
+}
+
+// StepExecutionError error encountered while the Step Runner runs the WorkflowStepProcessor
+// registered for a step's Type. It wraps the processor's returned error as Core so errors.As can
+// still find any error the processor wrapped (including a NonRecoverableError). Potentially
+// transient, so subject to the task engine's normal per-attempt retry.
+type StepExecutionError struct{ goutils.BaseError }
+
+// NewStepExecutionError builds a StepExecutionError, optionally capturing the call stack.
+func NewStepExecutionError(message string, core error, getCallStack bool) StepExecutionError {
+	base := goutils.BaseError{Name: "StepExecutionError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return StepExecutionError{BaseError: base}
+}
