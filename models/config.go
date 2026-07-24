@@ -58,6 +58,44 @@ func (c TaskSchedulerConfig) MaintenanceTimerInt() time.Duration {
 	return time.Second * time.Duration(c.MaintenanceTimerIntSecs)
 }
 
+// PerTaskRetryParam retry parameters to apply to a specific task name
+type PerTaskRetryParam struct {
+	// TaskName task name
+	TaskName string `mapstructure:"name" json:"name" validate:"required"`
+	// Retry the retry parameters for the queue
+	Retry RetryParam `mapstructure:"retry" json:"retry" validate:"required"`
+}
+
+// TaskClientConfig task client config
+type TaskClientConfig struct {
+	// SchedulerQueue scheduler IPC queue name
+	SchedulerQueue string `mapstructure:"schedulerQueue" json:"schedulerQueue" validate:"required"`
+	// RetrySettings retry parameters to apply to specific task names
+	RetrySettings []PerTaskRetryParam `mapstructure:"retrySettings,omitempty" json:"retrySettings,omitempty" validate:"omitempty,dive"`
+}
+
+// ======================================================================================
+// workflow processing
+
+// WorkflowSchedulerConfig workflow scheduler config. Mirrors TaskSchedulerConfig but has no
+// task-name -> queue mappings: the workflow scheduler dispatches step tasks via the task client,
+// not through its own execution-queue senders. Its SchedulerQueue is the workflow scheduler's own
+// dedicated IPC queue, distinct from the task scheduler's SchedulerQueue.
+type WorkflowSchedulerConfig struct {
+	// MaintenanceTimerIntSecs maintenance timer interval in seconds
+	MaintenanceTimerIntSecs int `mapstructure:"maintenanceTimerIntSecs" json:"maintenanceTimerIntSecs" validate:"required,gte=10"`
+	// SchedulerQueue scheduler IPC queue name
+	SchedulerQueue string `mapstructure:"schedulerQueue" json:"schedulerQueue" validate:"required"`
+}
+
+// MaintenanceTimerInt convert MaintenanceTimerIntSecs to duration
+func (c WorkflowSchedulerConfig) MaintenanceTimerInt() time.Duration {
+	return time.Second * time.Duration(c.MaintenanceTimerIntSecs)
+}
+
+// ======================================================================================
+// Event notification
+
 // NotificationProducerConfig config for the notification producer, the component that polls
 // the audit log for un-broadcast events and publishes them over Redis pub/sub channels.
 type NotificationProducerConfig struct {
@@ -78,20 +116,4 @@ type NotificationProducerConfig struct {
 // PollInterval convert PollIntervalSecs to duration
 func (c NotificationProducerConfig) PollInterval() time.Duration {
 	return time.Second * time.Duration(c.PollIntervalSecs)
-}
-
-// PerTaskRetryParam retry parameters to apply to a specific task name
-type PerTaskRetryParam struct {
-	// TaskName task name
-	TaskName string `mapstructure:"name" json:"name" validate:"required"`
-	// Retry the retry parameters for the queue
-	Retry RetryParam `mapstructure:"retry" json:"retry" validate:"required"`
-}
-
-// TaskClientConfig task client config
-type TaskClientConfig struct {
-	// SchedulerQueue scheduler IPC queue name
-	SchedulerQueue string `mapstructure:"schedulerQueue" json:"schedulerQueue" validate:"required"`
-	// RetrySettings retry parameters to apply to specific task names
-	RetrySettings []PerTaskRetryParam `mapstructure:"retrySettings,omitempty" json:"retrySettings,omitempty" validate:"omitempty,dive"`
 }

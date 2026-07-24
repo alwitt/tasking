@@ -35,6 +35,31 @@ const (
 	// failure, distinct from IPCMsgTypeExecuteFailed which reports a failure
 	// during actual task execution.
 	IPCMsgTypeEngineFailed IPCMessageTypeEnum = "IPC_TASK_ENG_ENGINE_FAILED"
+
+	// ----------------------------------------------------------------------------------
+	// Workflow scheduler IPC message types. These drive the workflow scheduler's single-thread
+	// event loop over its own dedicated IPC queue (distinct from the task scheduler queue). See
+	// workflow/DESIGN.md "Scheduler Events".
+
+	// IPCMsgTypeWFProcessWorkflow IPC message asking the workflow scheduler to process a
+	// workflow: start it (PENDING -> RUNNING) on first receipt and fan out startable steps.
+	IPCMsgTypeWFProcessWorkflow IPCMessageTypeEnum = "IPC_WF_ENG_PROCESS_WORKFLOW"
+	// IPCMsgTypeWFScheduleStep IPC message asking the workflow scheduler to dispatch one
+	// workflow step to the task engine.
+	IPCMsgTypeWFScheduleStep IPCMessageTypeEnum = "IPC_WF_ENG_SCHEDULE_STEP"
+	// IPCMsgTypeWFStepExecUpdate IPC message delivering a workflow step's already-resolved
+	// terminal outcome to the scheduler's execution-update reducer. Produced by the notify
+	// callback adapter (task terminal event -> step state) and by the maintenance sweep.
+	IPCMsgTypeWFStepExecUpdate IPCMessageTypeEnum = "IPC_WF_ENG_STEP_EXEC_UPDATE"
+	// IPCMsgTypeWFReviveWorkflow IPC message asking the workflow scheduler to revive a
+	// FAILED/TIMED_OUT workflow (optionally with a new deadline).
+	IPCMsgTypeWFReviveWorkflow IPCMessageTypeEnum = "IPC_WF_ENG_REVIVE_WORKFLOW"
+	// IPCMsgTypeWFCancelWorkflow IPC message asking the workflow scheduler to cancel a workflow.
+	IPCMsgTypeWFCancelWorkflow IPCMessageTypeEnum = "IPC_WF_ENG_CANCEL_WORKFLOW"
+	// IPCMsgTypeWFMaintenance IPC message triggering the workflow scheduler's periodic
+	// recovery/liveness maintenance sweep. Self-enqueued by the maintenance interval timer;
+	// carries no payload beyond the base message.
+	IPCMsgTypeWFMaintenance IPCMessageTypeEnum = "IPC_WF_ENG_MAINTENANCE"
 )
 
 // Values all valid IPCMessageTypeEnum values
@@ -46,6 +71,12 @@ func (IPCMessageTypeEnum) Values() []IPCMessageTypeEnum {
 		IPCMsgTypeExecuteSucceeded,
 		IPCMsgTypeExecuteFailed,
 		IPCMsgTypeEngineFailed,
+		IPCMsgTypeWFProcessWorkflow,
+		IPCMsgTypeWFScheduleStep,
+		IPCMsgTypeWFStepExecUpdate,
+		IPCMsgTypeWFReviveWorkflow,
+		IPCMsgTypeWFCancelWorkflow,
+		IPCMsgTypeWFMaintenance,
 	}
 }
 
@@ -59,6 +90,13 @@ type BaseIPCMessage struct {
 	Sender string `json:"sender" validate:"required"`
 	// Timestamp message timestamp
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// StringPayload return its payload as a string. This lets BaseIPCMessage be sent directly for
+// payload-less message types (e.g. IPCMsgTypeWFMaintenance).
+func (q BaseIPCMessage) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
 }
 
 // ParseIPCMessage parse the IPC message based on type
@@ -107,6 +145,48 @@ func ParseIPCMessage(validator *validator.Validate, msg []byte) (interface{}, er
 		}
 		return parsed, validate(&parsed)
 
+	case IPCMsgTypeWFProcessWorkflow:
+		fallthrough
+	case IPCMsgTypeWFCancelWorkflow:
+		var parsed IPCMessageWorkflow
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+
+	case IPCMsgTypeWFScheduleStep:
+		var parsed IPCMessageWorkflowStep
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+
+	case IPCMsgTypeWFStepExecUpdate:
+		var parsed IPCMessageWorkflowStepExecUpdate
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+
+	case IPCMsgTypeWFReviveWorkflow:
+		var parsed IPCMessageWorkflowRevive
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+
+	case IPCMsgTypeWFMaintenance:
+		// Carries no payload beyond the base message, already parsed and validated above.
+		return asBaseMsg, nil
+
 	default:
 		return nil, goutils.NewConsistencyError(
 			fmt.Sprintf("unknown IPC message type %s", asBaseMsg.Type), nil, true,
@@ -139,6 +219,78 @@ type IPCMessageExecuteInstance struct {
 
 // StringPayload return its payload as a string
 func (q IPCMessageExecuteInstance) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
+}
+
+// ======================================================================================
+// Workflow scheduler IPC message objects
+
+// IPCMessageWorkflow a workflow-scoped IPC message referencing a single workflow by ID. Shared
+// by IPCMsgTypeWFProcessWorkflow and IPCMsgTypeWFCancelWorkflow (same shape, distinguished by
+// Type), mirroring how IPCMessageSystemTask is shared by the new/cancel task messages.
+type IPCMessageWorkflow struct {
+	BaseIPCMessage
+	// WorkflowID ID of the workflow referenced
+	WorkflowID string `json:"workflow_id" validate:"required"`
+}
+
+// StringPayload return its payload as a string
+func (q IPCMessageWorkflow) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
+}
+
+// IPCMessageWorkflowStep a step-scoped IPC message referencing a single workflow step by ID.
+// Used by IPCMsgTypeWFScheduleStep.
+type IPCMessageWorkflowStep struct {
+	BaseIPCMessage
+	// StepID ID of the workflow step referenced
+	StepID string `json:"step_id" validate:"required"`
+}
+
+// StringPayload return its payload as a string
+func (q IPCMessageWorkflowStep) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
+}
+
+// IPCMessageWorkflowStepExecUpdate delivers a workflow step's already-resolved terminal outcome
+// to the scheduler's execution-update reducer (keyed [step ID, new step state]). The producers
+// (the notify callback adapter and the maintenance sweep) resolve the task-event-type -> step
+// state mapping before enqueueing, so the reducer never sees raw task event types. Used by
+// IPCMsgTypeWFStepExecUpdate.
+type IPCMessageWorkflowStepExecUpdate struct {
+	BaseIPCMessage
+	// StepID ID of the workflow step referenced
+	StepID string `json:"step_id" validate:"required"`
+	// NewStepState the resolved new step state. The workflow_step_state macro accepts any step
+	// state; the reducer additionally enforces that it is a terminal outcome
+	// (COMPLETE/FAILED/TIMED_OUT/CANCELLED) at handling time.
+	NewStepState WorkflowStepStateENUM `json:"new_step_state" validate:"required,workflow_step_state"`
+}
+
+// StringPayload return its payload as a string
+func (q IPCMessageWorkflowStepExecUpdate) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
+}
+
+// IPCMessageWorkflowRevive asks the scheduler to revive a FAILED/TIMED_OUT workflow. NewDeadline
+// is optional: nil/absent means no deadline change (valid for a FAILED revive); present extends
+// the deadline (required for a TIMED_OUT revive). The "required iff TIMED_OUT" rule is enforced
+// in the scheduler handler against live workflow state, not by a struct tag. Used by
+// IPCMsgTypeWFReviveWorkflow.
+type IPCMessageWorkflowRevive struct {
+	BaseIPCMessage
+	// WorkflowID ID of the workflow to revive
+	WorkflowID string `json:"workflow_id" validate:"required"`
+	// NewDeadline optional new workflow deadline
+	NewDeadline *time.Time `json:"new_deadline,omitempty"`
+}
+
+// StringPayload return its payload as a string
+func (q IPCMessageWorkflowRevive) StringPayload() (string, error) {
 	t, err := json.Marshal(&q)
 	return string(t), err
 }
@@ -238,5 +390,99 @@ func PrepareIPCMsgTaskExecutionEngineFailed(
 			Timestamp: timestamp,
 		},
 		InstanceID: instanceID,
+	}
+}
+
+// ----------------------------------------------------------------------------------
+// Workflow scheduler IPC message constructors
+
+// PrepareIPCMsgWFProcessWorkflow build IPC message `IPC_WF_ENG_PROCESS_WORKFLOW`
+func PrepareIPCMsgWFProcessWorkflow(
+	sender string, workflowID string, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflow{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFProcessWorkflow,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		WorkflowID: workflowID,
+	}
+}
+
+// PrepareIPCMsgWFCancelWorkflow build IPC message `IPC_WF_ENG_CANCEL_WORKFLOW`
+func PrepareIPCMsgWFCancelWorkflow(
+	sender string, workflowID string, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflow{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFCancelWorkflow,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		WorkflowID: workflowID,
+	}
+}
+
+// PrepareIPCMsgWFScheduleStep build IPC message `IPC_WF_ENG_SCHEDULE_STEP`
+func PrepareIPCMsgWFScheduleStep(
+	sender string, stepID string, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflowStep{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFScheduleStep,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		StepID: stepID,
+	}
+}
+
+// PrepareIPCMsgWFStepExecUpdate build IPC message `IPC_WF_ENG_STEP_EXEC_UPDATE`. newStepState is
+// the already-resolved terminal step outcome.
+func PrepareIPCMsgWFStepExecUpdate(
+	sender string, stepID string, newStepState WorkflowStepStateENUM, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflowStepExecUpdate{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFStepExecUpdate,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		StepID:       stepID,
+		NewStepState: newStepState,
+	}
+}
+
+// PrepareIPCMsgWFReviveWorkflow build IPC message `IPC_WF_ENG_REVIVE_WORKFLOW`. A nil newDeadline
+// means no deadline change.
+func PrepareIPCMsgWFReviveWorkflow(
+	sender string, workflowID string, newDeadline *time.Time, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflowRevive{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFReviveWorkflow,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		WorkflowID:  workflowID,
+		NewDeadline: newDeadline,
+	}
+}
+
+// PrepareIPCMsgWFMaintenance build IPC message `IPC_WF_ENG_MAINTENANCE`
+func PrepareIPCMsgWFMaintenance(
+	sender string, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return BaseIPCMessage{
+		ID:        ulid.Make().String(),
+		Type:      IPCMsgTypeWFMaintenance,
+		Sender:    sender,
+		Timestamp: timestamp,
 	}
 }

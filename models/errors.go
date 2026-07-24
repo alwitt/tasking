@@ -224,3 +224,24 @@ func NewStepExecutionError(message string, core error, getCallStack bool) StepEx
 	}
 	return StepExecutionError{BaseError: base}
 }
+
+// ======================================================================================
+// Workflow Scheduler Errors
+
+// WorkflowSchedulerError error operating the workflow scheduler component: both the machinery
+// (validator/timer setup, queue receiver/sender setup, lifecycle start/stop, IPC message
+// parse/dispatch) and the per-event workflow/step state-transition logic. Wraps the underlying
+// cause (e.g. PersistenceError, ConsistencyError, IPCMessageQueueError) as Core. Mirrors
+// TaskSchedulerError for the workflow scheduler.
+type WorkflowSchedulerError struct{ goutils.BaseError }
+
+// NewWorkflowSchedulerError builds a WorkflowSchedulerError, optionally capturing the call stack.
+func NewWorkflowSchedulerError(
+	message string, core error, getCallStack bool,
+) WorkflowSchedulerError {
+	base := goutils.BaseError{Name: "WorkflowSchedulerError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return WorkflowSchedulerError{BaseError: base}
+}
