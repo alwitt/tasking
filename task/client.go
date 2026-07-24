@@ -31,6 +31,13 @@ type DefineTaskParams struct {
 	Creator *string
 	// Deadline if specified, the task must complete by this dead line.
 	Deadline *time.Time
+	// Retry optional per-task retry policy, carried in full (Factor included). When nil the client
+	// resolves retry the usual way (the by-task-name policy from the client config, else the
+	// default). When non-nil it is used verbatim, overriding both. This is the escape hatch for
+	// callers whose retry policy is per-submission rather than a static property of the task name -
+	// e.g. the workflow engine, where every step task shares the one name __EXECUTE_WORKFLOW_STEP__
+	// but each step carries its own TaskRetryParameters.
+	Retry *models.TaskRetryParameters
 }
 
 // Client task engine client
@@ -78,6 +85,63 @@ type Client interface {
 		targetRuntime time.Time,
 		activeDBClient db.Database,
 	) (models.Task, error)
+
+	/*
+		DefineImmediateOneShotTask define (but do NOT submit) an immediate one-shot class task.
+
+		This is the define-only half of DefineAndRunImmediateOneShotTask: it persists the task
+		entry and returns it, without poking the scheduler. The caller is responsible for calling
+		SubmitTask afterwards to actually dispatch it. This split lets a caller commit its own
+		additional state between the define and the submit - e.g. the workflow scheduler links the
+		step to this task and marks the step RUNNING in the same transaction, then submits only
+		after that commits (state-before-poke). On error the returned error `errors.As` a
+		`models.PersistenceError`: the DB define failed and no task was created.
+
+			@param ctx context.Context - execution context
+			@param params DefineTaskParams - the task definition parameters
+			@param activeDBClient db.Database - an existing open data base transaction to continue in
+			@return the newly defined task entry
+	*/
+	DefineImmediateOneShotTask(
+		ctx context.Context,
+		params DefineTaskParams,
+		activeDBClient db.Database,
+	) (models.Task, error)
+
+	/*
+		DefineScheduledOneShotTask define (but do NOT submit) a scheduled one-shot class task.
+
+		The define-only half of DefineAndRunScheduledOneShotTask; see DefineImmediateOneShotTask
+		for the define/submit split rationale. On error the returned error `errors.As` a
+		`models.PersistenceError`: the DB define failed and no task was created.
+
+			@param ctx context.Context - execution context
+			@param params DefineTaskParams - the task definition parameters
+			@param targetRuntime time.Time - target time when the task should run
+			@param activeDBClient db.Database - an existing open data base transaction to continue in
+			@return the newly defined task entry
+	*/
+	DefineScheduledOneShotTask(
+		ctx context.Context,
+		params DefineTaskParams,
+		targetRuntime time.Time,
+		activeDBClient db.Database,
+	) (models.Task, error)
+
+	/*
+		SubmitTask submit an already-defined task to the scheduler for execution.
+
+		This is the submit-only half of the DefineAndRun* methods: it pokes the scheduler queue for
+		a task whose entry has already been persisted (via DefineImmediateOneShotTask /
+		DefineScheduledOneShotTask). It runs no database work. A failed submit `errors.As` a
+		`models.IPCMessageQueueError`: the task entry still exists and the scheduler's own
+		maintenance will eventually pick it up, so a caller following state-before-poke may treat a
+		submit failure as a lost poke rather than a lost task.
+
+			@param ctx context.Context - execution context
+			@param taskID string - ID of the already-defined task to submit
+	*/
+	SubmitTask(ctx context.Context, taskID string) error
 
 	/*
 		CancelTask request scheduler cancel a task
@@ -219,12 +283,36 @@ func (c *clientImpl) DefineAndRunImmediateOneShotTask(
 	params DefineTaskParams,
 	activeDBClient db.Database,
 ) (models.Task, error) {
+	taskEntry, err := c.DefineImmediateOneShotTask(ctx, params, activeDBClient)
+	if err != nil {
+		return taskEntry, err
+	}
+	if err := c.SubmitTask(ctx, taskEntry.ID); err != nil {
+		return taskEntry, err
+	}
+	return taskEntry, nil
+}
+
+/*
+DefineImmediateOneShotTask define (but do NOT submit) an immediate one-shot class task.
+See the Client interface for the define/submit split rationale.
+
+	@param ctx context.Context - execution context
+	@param params DefineTaskParams - the task definition parameters
+	@param activeDBClient db.Database - an existing open data base transaction to continue in
+	@return the newly defined task entry
+*/
+func (c *clientImpl) DefineImmediateOneShotTask(
+	ctx context.Context,
+	params DefineTaskParams,
+	activeDBClient db.Database,
+) (models.Task, error) {
 	if err := c.validator.Struct(&params); err != nil {
 		return models.Task{}, goutils.NewBadInputError("task definition param is invalid", err, true)
 	}
 
-	return c.defineAndRunOneShotTask(
-		ctx, params.Name, activeDBClient,
+	return c.defineOneShotTask(
+		ctx, params.Name, params.Retry, activeDBClient,
 		func(
 			dbCtx context.Context, dbClient db.Database, retry models.TaskRetryParameters,
 		) (models.Task, error) {
@@ -264,6 +352,32 @@ func (c *clientImpl) DefineAndRunScheduledOneShotTask(
 	targetRuntime time.Time,
 	activeDBClient db.Database,
 ) (models.Task, error) {
+	taskEntry, err := c.DefineScheduledOneShotTask(ctx, params, targetRuntime, activeDBClient)
+	if err != nil {
+		return taskEntry, err
+	}
+	if err := c.SubmitTask(ctx, taskEntry.ID); err != nil {
+		return taskEntry, err
+	}
+	return taskEntry, nil
+}
+
+/*
+DefineScheduledOneShotTask define (but do NOT submit) a scheduled one-shot class task.
+See the Client interface for the define/submit split rationale.
+
+	@param ctx context.Context - execution context
+	@param params DefineTaskParams - the task definition parameters
+	@param targetRuntime time.Time - target time when the task should run
+	@param activeDBClient db.Database - an existing open data base transaction to continue in
+	@return the newly defined task entry
+*/
+func (c *clientImpl) DefineScheduledOneShotTask(
+	ctx context.Context,
+	params DefineTaskParams,
+	targetRuntime time.Time,
+	activeDBClient db.Database,
+) (models.Task, error) {
 	if err := c.validator.Struct(&params); err != nil {
 		return models.Task{}, goutils.NewBadInputError("task definition param is invalid", err, true)
 	}
@@ -274,8 +388,8 @@ func (c *clientImpl) DefineAndRunScheduledOneShotTask(
 		)
 	}
 
-	return c.defineAndRunOneShotTask(
-		ctx, params.Name, activeDBClient,
+	return c.defineOneShotTask(
+		ctx, params.Name, params.Retry, activeDBClient,
 		func(
 			dbCtx context.Context, dbClient db.Database, retry models.TaskRetryParameters,
 		) (models.Task, error) {
@@ -302,27 +416,29 @@ func (c *clientImpl) resolveCreator(override *string) string {
 }
 
 /*
-defineAndRunOneShotTask defines a one-shot task entry then notifies the scheduler.
+defineOneShotTask defines a one-shot task entry, WITHOUT notifying the scheduler.
 
 The `define` callback runs inside the (possibly caller-supplied) database transaction and is
 responsible for the one differing DB call between the immediate and scheduled variants. The
-scheduler IPC send runs AFTER that transaction work returns successfully, so it is NOT rolled
-back with the row. Error contract for the returned (wrapped) error:
+resolved retry passed to it is: the per-submission `overrideRetry` when non-nil, else the
+client's by-name policy for `name`, else the default. Submitting the defined task to the
+scheduler is a separate step (SubmitTask), so a caller can commit its own additional state
+between the define and the submit. Error contract for the returned (wrapped) error:
 
   - `errors.As` -> `models.PersistenceError`: the DB define failed; no task row was created.
 
-  - `errors.As` -> `models.IPCMessageQueueError`: the row was created, but notifying the
-    scheduler failed.
-
     @param ctx context.Context - execution context
     @param name string - the task name, used for retry lookup and error messages
+    @param overrideRetry *models.RetryParam - optional per-submission retry override; nil uses
+    the by-name/default policy
     @param activeDBClient db.Database - an existing open data base transaction to continue in
     @param define - callback performing the variant-specific task definition
     @return the newly defined task entry
 */
-func (c *clientImpl) defineAndRunOneShotTask(
+func (c *clientImpl) defineOneShotTask(
 	ctx context.Context,
 	name string,
+	overrideRetry *models.TaskRetryParameters,
 	activeDBClient db.Database,
 	define func(
 		dbCtx context.Context, dbClient db.Database, retry models.TaskRetryParameters,
@@ -331,16 +447,9 @@ func (c *clientImpl) defineAndRunOneShotTask(
 	var taskEntry models.Task
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, c.persistence, func(dbCtx context.Context, dbClient db.Database) error {
-			retry := models.DefaultTaskRetryParameters()
-			if customRetry, ok := c.retryForTaskName[name]; ok {
-				retry.InitialDelaySec = customRetry.InitialDelaySec
-				retry.MaxDelaySec = customRetry.MaxDelaySec
-				retry.MaxRetries = customRetry.MaxRetries
-			}
-
-			// Define the task entry
+			// Define the task entry with the resolved retry policy.
 			var err error
-			taskEntry, err = define(dbCtx, dbClient, retry)
+			taskEntry, err = define(dbCtx, dbClient, c.resolveRetry(name, overrideRetry))
 			if err != nil {
 				return models.NewPersistenceError(
 					fmt.Sprintf("failed to define new one-shot task entry for '%s'", name), err, true,
@@ -354,18 +463,47 @@ func (c *clientImpl) defineAndRunOneShotTask(
 		)
 	}
 
-	// Notify the scheduler AFTER the task entry is persisted. This send is not part of the
-	// database transaction above, so a failure here leaves the (already created) task entry in
-	// place; the returned error carries the IPCMessageQueueError as its Core.
+	return taskEntry, nil
+}
+
+// resolveRetry resolves the retry policy for a submission. A per-submission override wins (used
+// verbatim, Factor included); else the client's by-task-name policy is layered onto the default
+// (matching the historical behavior, which only carries InitialDelaySec/MaxDelaySec/MaxRetries);
+// else the default is used.
+func (c *clientImpl) resolveRetry(
+	name string, override *models.TaskRetryParameters,
+) models.TaskRetryParameters {
+	if override != nil {
+		return *override
+	}
+	retry := models.DefaultTaskRetryParameters()
+	if byName, ok := c.retryForTaskName[name]; ok {
+		retry.InitialDelaySec = byName.InitialDelaySec
+		retry.MaxDelaySec = byName.MaxDelaySec
+		retry.MaxRetries = byName.MaxRetries
+	}
+	return retry
+}
+
+/*
+SubmitTask submit an already-defined task to the scheduler for execution. See the Client
+interface for the define/submit split rationale.
+
+The send is not part of any database transaction, so a failure here leaves the (already
+created) task entry in place; the returned error `errors.As` a `models.IPCMessageQueueError`.
+
+	@param ctx context.Context - execution context
+	@param taskID string - ID of the already-defined task to submit
+*/
+func (c *clientImpl) SubmitTask(ctx context.Context, taskID string) error {
 	if sendErr := c.schedulerIPCSender.EnqueueMessage(
-		ctx, models.PrepareIPCMsgNewPendingTask(c.ipcSender, taskEntry.ID, time.Now().UTC()),
+		ctx, models.PrepareIPCMsgNewPendingTask(c.ipcSender, taskID, time.Now().UTC()),
 	); sendErr != nil {
-		return taskEntry, models.NewTaskClientError(
-			"one-shot '"+name+"' task created but failed to submit to the scheduler", sendErr, true,
+		return models.NewTaskClientError(
+			"task "+taskID+" created but failed to submit to the scheduler", sendErr, true,
 		)
 	}
-
-	return taskEntry, nil
+	return nil
 }
 
 /*

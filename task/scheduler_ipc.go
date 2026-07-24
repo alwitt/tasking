@@ -31,7 +31,7 @@ func (s *schedulerImpl) processQueue() {
 				log.
 					WithError(err).
 					WithFields(goutils.UpdateCodePositionInTags(logTags)).
-					Error("Stopping queue processing due to receiver context error")
+					Errorf("Stopping queue processing due to receiver context error:\n%+v", err)
 			}
 			break
 		}
@@ -40,7 +40,7 @@ func (s *schedulerImpl) processQueue() {
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Fatal("Encountered fatal error while processing IPC messages")
+				Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
 		}
 	}
 }

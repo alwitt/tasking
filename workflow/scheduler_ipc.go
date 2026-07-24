@@ -31,7 +31,7 @@ func (s *schedulerImpl) processQueue() {
 				log.
 					WithError(err).
 					WithFields(goutils.UpdateCodePositionInTags(logTags)).
-					Error("Stopping queue processing due to receiver context error")
+					Errorf("Stopping queue processing due to receiver context error:\n%+v", err)
 			}
 			break
 		}
@@ -40,7 +40,7 @@ func (s *schedulerImpl) processQueue() {
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Fatal("Encountered fatal error while processing IPC messages")
+				Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
 		}
 	}
 }
@@ -292,12 +292,11 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	case models.IPCMessageWorkflow:
 		switch typed.Type {
 		case models.IPCMsgTypeWFProcessWorkflow:
-			// TODO: fan out startable steps; PENDING -> RUNNING on first processing.
-			return models.NewWorkflowSchedulerError(
-				fmt.Sprintf(
-					"process workflow ('%s') handling not yet implemented", typed.WorkflowID,
-				), nil, true,
-			)
+			// Start the workflow (PENDING -> RUNNING on first receipt) and fan out startable steps.
+			if err := s.processWorkflow(ctx, typed.WorkflowID); err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
 
 		case models.IPCMsgTypeWFCancelWorkflow:
 			// TODO: drive workflow cancellation.
@@ -319,12 +318,11 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	case models.IPCMessageWorkflowStep:
 		switch typed.Type {
 		case models.IPCMsgTypeWFScheduleStep:
-			// TODO: dispatch this step to the task engine via the task client.
-			return models.NewWorkflowSchedulerError(
-				fmt.Sprintf(
-					"schedule workflow step ('%s') handling not yet implemented", typed.StepID,
-				), nil, true,
-			)
+			// Dispatch this step to the task engine (PENDING -> RUNNING + submit its task).
+			if err := s.scheduleWorkflowStep(ctx, typed.StepID); err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
 
 		default:
 			s.recordAndDropInvalidMessage(

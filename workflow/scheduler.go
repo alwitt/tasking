@@ -63,12 +63,20 @@ type schedulerImpl struct {
 	// post Workflow State Maintenance ticks, and (in later slices) for the scheduler's self-emitted
 	// Process Workflow / Schedule Workflow Step / forwarded Execution Update events.
 	ipcSender common.IPCMessageSend
+
+	// taskClient commands the task engine - the scheduler's one outbound channel to it. Schedule
+	// Workflow Step defines + submits a step's execution task through this client; later slices
+	// (timeout / cancel) also cancel step tasks through it. Feedback comes back the other way, over
+	// notify pub/sub (not this client).
+	taskClient task.Client
 }
 
 // NewWorkflowSchedulerParams init parameters for a workflow scheduler
 type NewWorkflowSchedulerParams struct {
 	// Persistence persistence client
 	Persistence db.Client `validate:"required"`
+	// TaskClient task engine client, used to dispatch (and later cancel) step execution tasks
+	TaskClient task.Client `validate:"required"`
 	// Config workflow scheduler config
 	Config models.WorkflowSchedulerConfig `validate:"required"`
 	// Redis REDIS client
@@ -114,6 +122,7 @@ func NewWorkflowScheduler(
 		config:      params.Config,
 		wg:          &sync.WaitGroup{},
 		persistence: params.Persistence,
+		taskClient:  params.TaskClient,
 		ipcName:     "workflow-scheduler",
 	}
 	instance.runCtx, instance.runCtxCancel = context.WithCancel(parentCtx)

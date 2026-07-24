@@ -324,6 +324,105 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 	})
 }
 
+// TestClientDefineThenSubmitSplit covers the define/submit split introduced for callers that
+// need to commit their own state between defining a task and submitting it (state-before-poke):
+// DefineImmediateOneShotTask defines without poking, SubmitTask pokes on its own, and the
+// per-submission Retry override wins over both the by-name policy and the default.
+func TestClientDefineThenSubmitSplit(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+
+	t.Run("DefineImmediateOneShotTask defines without submitting", func(t *testing.T) {
+		assert := assert.New(t)
+
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
+
+		created := models.Task{ID: ulid.Make().String()}
+		mockDatabase := mockdb.NewDatabase(t)
+		mockDatabase.EXPECT().
+			DefineNewOneShotTask(mock.Anything, mock.Anything).
+			Return(created, nil)
+		h.mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxForClient(mockDatabase))
+		// No EnqueueMessage expectation: the strict sender mock fails if a poke is attempted.
+
+		defined, err := client.DefineImmediateOneShotTask(
+			utCtx, task.DefineTaskParams{Name: "unit-test-task"}, nil,
+		)
+		assert.Nil(err)
+		assert.Equal(created.ID, defined.ID)
+	})
+
+	t.Run("per-submission Retry override wins over by-name and default", func(t *testing.T) {
+		assert := assert.New(t)
+
+		// The by-name policy for "unit-test-task" is present but must be overridden by the
+		// per-submission Retry.
+		config := baseClientConfig()
+		config.RetrySettings = []models.PerTaskRetryParam{
+			{
+				TaskName: "unit-test-task",
+				Retry:    models.RetryParam{InitialDelaySec: 11, MaxRetries: 7},
+			},
+		}
+		client, h := newClientTestHarness(utCtx, t, config)
+
+		override := models.TaskRetryParameters{InitialDelaySec: 3, MaxRetries: 99, Factor: 2.5}
+		created := models.Task{ID: ulid.Make().String()}
+		mockDatabase := mockdb.NewDatabase(t)
+		mockDatabase.EXPECT().
+			DefineNewOneShotTask(mock.Anything, mock.MatchedBy(func(p db.NewTaskParameter) bool {
+				// The full override is used verbatim, Factor included (which the by-name policy
+				// cannot express).
+				return p.RetryParam.MaxRetries == 99 && p.RetryParam.InitialDelaySec == 3 &&
+					p.RetryParam.Factor == 2.5
+			})).
+			Return(created, nil)
+		h.mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxForClient(mockDatabase))
+
+		_, err := client.DefineImmediateOneShotTask(
+			utCtx, task.DefineTaskParams{Name: "unit-test-task", Retry: &override}, nil,
+		)
+		assert.Nil(err)
+	})
+
+	t.Run("SubmitTask pokes a NEW_TASK for the given task ID", func(t *testing.T) {
+		assert := assert.New(t)
+
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
+
+		taskID := ulid.Make().String()
+		h.sender.EXPECT().
+			EnqueueMessage(mock.Anything, mock.MatchedBy(func(msg goutilsRedis.QueueMessageEnvelope) bool {
+				parsed := parseEnqueuedSystemTask(t, msg)
+				return parsed.Type == models.IPCMsgTypeNewTask && parsed.TaskID == taskID
+			})).
+			Return(nil)
+
+		assert.Nil(client.SubmitTask(utCtx, taskID))
+	})
+
+	t.Run("SubmitTask failure yields an IPCMessageQueueError", func(t *testing.T) {
+		assert := assert.New(t)
+
+		client, h := newClientTestHarness(utCtx, t, baseClientConfig())
+
+		simErr := models.NewIPCMessageQueueError("simulated enqueue failure", nil, true)
+		h.sender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(simErr)
+
+		err := client.SubmitTask(utCtx, ulid.Make().String())
+		assert.NotNil(err)
+		var queueErr models.IPCMessageQueueError
+		assert.True(
+			errors.As(err, &queueErr), "expected IPCMessageQueueError, got %T: %v", err, err,
+		)
+	})
+}
+
 // TestClientDefineAndRunScheduledOneShotTask covers the scheduled one-shot submission path,
 // including the deadline-before-runtime guard that short-circuits before any DB work.
 func TestClientDefineAndRunScheduledOneShotTask(t *testing.T) {

@@ -253,3 +253,210 @@ func (_c *Client_DefineAndRunScheduledOneShotTask_Call) RunAndReturn(run func(ct
 	_c.Call.Return(run)
 	return _c
 }
+
+// DefineImmediateOneShotTask provides a mock function for the type Client
+func (_mock *Client) DefineImmediateOneShotTask(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database) (models.Task, error) {
+	ret := _mock.Called(ctx, params, activeDBClient)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefineImmediateOneShotTask")
+	}
+
+	var r0 models.Task
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, db.Database) (models.Task, error)); ok {
+		return returnFunc(ctx, params, activeDBClient)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, db.Database) models.Task); ok {
+		r0 = returnFunc(ctx, params, activeDBClient)
+	} else {
+		r0 = ret.Get(0).(models.Task)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, task.DefineTaskParams, db.Database) error); ok {
+		r1 = returnFunc(ctx, params, activeDBClient)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Client_DefineImmediateOneShotTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefineImmediateOneShotTask'
+type Client_DefineImmediateOneShotTask_Call struct {
+	*mock.Call
+}
+
+// DefineImmediateOneShotTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - params task.DefineTaskParams
+//   - activeDBClient db.Database
+func (_e *Client_Expecter) DefineImmediateOneShotTask(ctx interface{}, params interface{}, activeDBClient interface{}) *Client_DefineImmediateOneShotTask_Call {
+	return &Client_DefineImmediateOneShotTask_Call{Call: _e.mock.On("DefineImmediateOneShotTask", ctx, params, activeDBClient)}
+}
+
+func (_c *Client_DefineImmediateOneShotTask_Call) Run(run func(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database)) *Client_DefineImmediateOneShotTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 task.DefineTaskParams
+		if args[1] != nil {
+			arg1 = args[1].(task.DefineTaskParams)
+		}
+		var arg2 db.Database
+		if args[2] != nil {
+			arg2 = args[2].(db.Database)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *Client_DefineImmediateOneShotTask_Call) Return(task1 models.Task, err error) *Client_DefineImmediateOneShotTask_Call {
+	_c.Call.Return(task1, err)
+	return _c
+}
+
+func (_c *Client_DefineImmediateOneShotTask_Call) RunAndReturn(run func(ctx context.Context, params task.DefineTaskParams, activeDBClient db.Database) (models.Task, error)) *Client_DefineImmediateOneShotTask_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DefineScheduledOneShotTask provides a mock function for the type Client
+func (_mock *Client) DefineScheduledOneShotTask(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database) (models.Task, error) {
+	ret := _mock.Called(ctx, params, targetRuntime, activeDBClient)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefineScheduledOneShotTask")
+	}
+
+	var r0 models.Task
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) (models.Task, error)); ok {
+		return returnFunc(ctx, params, targetRuntime, activeDBClient)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) models.Task); ok {
+		r0 = returnFunc(ctx, params, targetRuntime, activeDBClient)
+	} else {
+		r0 = ret.Get(0).(models.Task)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, task.DefineTaskParams, time.Time, db.Database) error); ok {
+		r1 = returnFunc(ctx, params, targetRuntime, activeDBClient)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Client_DefineScheduledOneShotTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefineScheduledOneShotTask'
+type Client_DefineScheduledOneShotTask_Call struct {
+	*mock.Call
+}
+
+// DefineScheduledOneShotTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - params task.DefineTaskParams
+//   - targetRuntime time.Time
+//   - activeDBClient db.Database
+func (_e *Client_Expecter) DefineScheduledOneShotTask(ctx interface{}, params interface{}, targetRuntime interface{}, activeDBClient interface{}) *Client_DefineScheduledOneShotTask_Call {
+	return &Client_DefineScheduledOneShotTask_Call{Call: _e.mock.On("DefineScheduledOneShotTask", ctx, params, targetRuntime, activeDBClient)}
+}
+
+func (_c *Client_DefineScheduledOneShotTask_Call) Run(run func(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database)) *Client_DefineScheduledOneShotTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 task.DefineTaskParams
+		if args[1] != nil {
+			arg1 = args[1].(task.DefineTaskParams)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		var arg3 db.Database
+		if args[3] != nil {
+			arg3 = args[3].(db.Database)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Client_DefineScheduledOneShotTask_Call) Return(task1 models.Task, err error) *Client_DefineScheduledOneShotTask_Call {
+	_c.Call.Return(task1, err)
+	return _c
+}
+
+func (_c *Client_DefineScheduledOneShotTask_Call) RunAndReturn(run func(ctx context.Context, params task.DefineTaskParams, targetRuntime time.Time, activeDBClient db.Database) (models.Task, error)) *Client_DefineScheduledOneShotTask_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SubmitTask provides a mock function for the type Client
+func (_mock *Client) SubmitTask(ctx context.Context, taskID string) error {
+	ret := _mock.Called(ctx, taskID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SubmitTask")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, taskID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Client_SubmitTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SubmitTask'
+type Client_SubmitTask_Call struct {
+	*mock.Call
+}
+
+// SubmitTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - taskID string
+func (_e *Client_Expecter) SubmitTask(ctx interface{}, taskID interface{}) *Client_SubmitTask_Call {
+	return &Client_SubmitTask_Call{Call: _e.mock.On("SubmitTask", ctx, taskID)}
+}
+
+func (_c *Client_SubmitTask_Call) Run(run func(ctx context.Context, taskID string)) *Client_SubmitTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Client_SubmitTask_Call) Return(err error) *Client_SubmitTask_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Client_SubmitTask_Call) RunAndReturn(run func(ctx context.Context, taskID string) error) *Client_SubmitTask_Call {
+	_c.Call.Return(run)
+	return _c
+}

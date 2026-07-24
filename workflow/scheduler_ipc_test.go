@@ -155,24 +155,18 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 	ts := time.Now().UTC()
 
 	// dispatchEnvelope build the wire envelope for a workflow message via its Prepare* constructor.
-	// stubCases: each of the five event messages that hit an unimplemented stub. The handler
+	// stubCases: each remaining event message that still hits an unimplemented stub. The handler
 	// returns a fatal error, so the message must be LEFT buffered (DeleteBufferedMessage NOT
-	// called) for startup replay.
+	// called) for startup replay. (Process Workflow and Schedule Workflow Step are now implemented
+	// and have their own tests in scheduler_process_workflow_test.go / scheduler_schedule_step_test.go,
+	// so they are not listed here.)
 	stubCases := []struct {
 		name string
 		env  goutilsRedis.QueueMessageEnvelope
 	}{
 		{
-			name: "process workflow",
-			env:  models.PrepareIPCMsgWFProcessWorkflow("unit-test", ulid.Make().String(), ts),
-		},
-		{
 			name: "cancel workflow",
 			env:  models.PrepareIPCMsgWFCancelWorkflow("unit-test", ulid.Make().String(), ts),
-		},
-		{
-			name: "schedule step",
-			env:  models.PrepareIPCMsgWFScheduleStep("unit-test", ulid.Make().String(), ts),
 		},
 		{
 			name: "step exec update",
