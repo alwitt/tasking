@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // fixedEnvelope a minimal goutilsRedis.QueueMessageEnvelope whose payload is fixed.
@@ -212,6 +213,37 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
 		// Maintenance is handled (NOOP) successfully, so the message is deleted.
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		assert.Nil(s.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("step task update routes to the handler and deletes on success", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+
+		taskID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFStepTaskUpdate(
+			"unit-test", taskID, models.WorkflowStepStateComplete, ts,
+		).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
+
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// The handler resolves task -> step; a not-found link is a benign drop, so the handler
+		// returns nil and the dispatch loop deletes the message. This confirms parse + routing.
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflowStepProcessedByTask(mock.Anything, taskID).
+			Return(models.WorkflowStep{}, goutils.NewNotFoundError("no step", gorm.ErrRecordNotFound, true))
 		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(s.processOneIPCRequest(utCtx))

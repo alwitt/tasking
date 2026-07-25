@@ -11,10 +11,17 @@ import (
 	"github.com/alwitt/tasking/common"
 	"github.com/alwitt/tasking/db"
 	"github.com/alwitt/tasking/models"
+	"github.com/alwitt/tasking/notify"
 	"github.com/alwitt/tasking/task"
 	"github.com/apex/log"
 	"github.com/go-playground/validator/v10"
 )
+
+// NotifyConsumerFactoryCB factory function signature for defining the scheduler's notification
+// consumer. Defaults to notify.NewConsumer; overridable for tests.
+type NotifyConsumerFactoryCB func(
+	parentCtx context.Context, params notify.NewConsumerParams,
+) (notify.Consumer, error)
 
 // Scheduler workflow scheduler: the single point of truth and the only mutator of workflow /
 // step state. See workflow/DESIGN.md "Workflow Scheduler".
@@ -69,6 +76,12 @@ type schedulerImpl struct {
 	// (timeout / cancel) also cancel step tasks through it. Feedback comes back the other way, over
 	// notify pub/sub (not this client).
 	taskClient task.Client
+
+	// notifyConsumer the long-lived notify subscriber on the engine's creator channel. Its callback
+	// (onNotification) adapts each task terminal event into a task-keyed Step Task Update on the
+	// scheduler queue. Started/stopped with the scheduler; the Redis client and factory that built
+	// it are not retained.
+	notifyConsumer notify.Consumer
 }
 
 // NewWorkflowSchedulerParams init parameters for a workflow scheduler
@@ -85,6 +98,10 @@ type NewWorkflowSchedulerParams struct {
 	IPCReceiverFactory task.IPCMsgReceiverFactoryCB `validate:"required"`
 	// IPCSenderFactory factory function to define Redis based IPC message senders
 	IPCSenderFactory task.IPCMsgSenderFactoryCB `validate:"required"`
+	// NotifyConsumerFactory factory function to define the notification consumer the scheduler
+	// subscribes task-engine feedback with. Neither this factory nor Redis is retained after
+	// construction - the resulting Consumer is.
+	NotifyConsumerFactory NotifyConsumerFactoryCB `validate:"required"`
 }
 
 /*
@@ -174,6 +191,29 @@ func NewWorkflowScheduler(
 		)
 	}
 
+	// ------------------------------------------------------------------------------------
+	// Prepare the notification consumer for task-engine feedback.
+	//
+	// One static subscription on the engine's creator channel: every step task is submitted with the
+	// reserved WorkflowExecutionTaskCreator, so all their terminal events land here. onNotification
+	// adapts each into a task-keyed Step Task Update on the scheduler queue. Neither Redis nor the
+	// factory is retained - only the resulting Consumer.
+	instance.notifyConsumer, err = params.NotifyConsumerFactory(
+		instance.runCtx, notify.NewConsumerParams{
+			Redis: params.Redis,
+			Name:  instance.ipcName + "-notify",
+			Topics: []string{
+				models.BuildNotifyCreatorChannelName(models.WorkflowExecutionTaskCreator),
+			},
+			Callback: instance.onNotification,
+		},
+	)
+	if err != nil {
+		return nil, models.NewWorkflowSchedulerError(
+			"failed to initialize notification consumer", err, true,
+		)
+	}
+
 	return instance, nil
 }
 
@@ -214,6 +254,13 @@ func (s *schedulerImpl) Start(_ context.Context) error {
 		s.processQueue()
 	}()
 
+	// Start consuming task-engine feedback. The callback only enqueues onto the scheduler queue, so
+	// starting it after processQueue is fine: a poke that lands before the loop is fully up simply
+	// waits in the queue.
+	if err := s.notifyConsumer.Start(s.runCtx); err != nil {
+		return models.NewWorkflowSchedulerError("failed to start notification consumer", err, true)
+	}
+
 	return nil
 }
 
@@ -224,6 +271,14 @@ Stop the workflow scheduler processing units
 */
 func (s *schedulerImpl) Stop(ctx context.Context) error {
 	logTags := s.GetLogTagsForContext(ctx)
+
+	// Stop inbound feedback first so no new pokes are enqueued while we shut down.
+	if err := s.notifyConsumer.Stop(ctx); err != nil {
+		log.
+			WithError(err).
+			WithFields(goutils.UpdateCodePositionInTags(logTags)).
+			Error("Failed to stop notification consumer")
+	}
 
 	// Stop the maintenance timer
 	if err := s.maintenanceTimer.Stop(); err != nil {

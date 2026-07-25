@@ -1,10 +1,16 @@
 // Package notify - subscribable notification framework for the task engine.
 //
-// The producer turns the durable audit log into best-effort Redis pub/sub notifications: an
+// The Producer turns the durable audit log into best-effort Redis pub/sub notifications: an
 // interval timer periodically polls the audit table for events not yet broadcast, publishes
 // each to its routed channels, then stamps them as broadcast. Production is at-least-once
 // (the broadcast marker survives restarts and re-publishes the crash window); delivery is
-// best-effort (Redis pub/sub drops messages for offline subscribers). See notify/DESIGN.md.
+// best-effort (Redis pub/sub drops messages for offline subscribers).
+//
+// The Consumer is its subscriber counterpart: it subscribes to a set of topics (literal channels
+// or glob patterns), deserializes each received payload into a models.NotificationEvent, and hands
+// it to a caller-supplied callback. Subscribers inherit the two delivery contracts - duplicates
+// happen (dedupe on event.ID) and offline subscribers miss events (catch up via the audit log).
+// See notify/DESIGN.md.
 package notify
 
 import (

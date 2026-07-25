@@ -101,6 +101,25 @@ func TestParseWorkflowStepExecUpdate(t *testing.T) {
 	assert.Equal(models.WorkflowStepStateComplete, typed.NewStepState)
 }
 
+func TestParseWorkflowStepTaskUpdate(t *testing.T) {
+	assert := assert.New(t)
+	validate := newIPCValidator(t)
+	taskID := ulid.Make().String()
+
+	parsed, err := parseEnvelope(
+		t, validate,
+		models.PrepareIPCMsgWFStepTaskUpdate(
+			"unit-test", taskID, models.WorkflowStepStateFailed, time.Now().UTC(),
+		),
+	)
+	assert.NoError(err)
+	typed, ok := parsed.(models.IPCMessageWorkflowStepTaskUpdate)
+	assert.True(ok, "expected IPCMessageWorkflowStepTaskUpdate, got %T", parsed)
+	assert.Equal(models.IPCMsgTypeWFStepTaskUpdate, typed.Type)
+	assert.Equal(taskID, typed.TaskID)
+	assert.Equal(models.WorkflowStepStateFailed, typed.NewStepState)
+}
+
 // TestParseWorkflowReviveWithAndWithoutDeadline the optional new_deadline round-trips as present
 // or nil.
 func TestParseWorkflowReviveWithAndWithoutDeadline(t *testing.T) {

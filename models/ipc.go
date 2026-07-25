@@ -51,6 +51,11 @@ const (
 	// terminal outcome to the scheduler's execution-update reducer. Produced by the notify
 	// callback adapter (task terminal event -> step state) and by the maintenance sweep.
 	IPCMsgTypeWFStepExecUpdate IPCMessageTypeEnum = "IPC_WF_ENG_STEP_EXEC_UPDATE"
+	// IPCMsgTypeWFStepTaskUpdate IPC message delivering a step's terminal outcome keyed by the
+	// executing TASK ID - the notify fast-path feedback. Produced by the notify callback adapter
+	// (which has only the task ID and does no DB work); the scheduler worker resolves task -> step
+	// before invoking the step-keyed execution-update reducer.
+	IPCMsgTypeWFStepTaskUpdate IPCMessageTypeEnum = "IPC_WF_ENG_STEP_TASK_UPDATE"
 	// IPCMsgTypeWFReviveWorkflow IPC message asking the workflow scheduler to revive a
 	// FAILED/TIMED_OUT workflow (optionally with a new deadline).
 	IPCMsgTypeWFReviveWorkflow IPCMessageTypeEnum = "IPC_WF_ENG_REVIVE_WORKFLOW"
@@ -74,6 +79,7 @@ func (IPCMessageTypeEnum) Values() []IPCMessageTypeEnum {
 		IPCMsgTypeWFProcessWorkflow,
 		IPCMsgTypeWFScheduleStep,
 		IPCMsgTypeWFStepExecUpdate,
+		IPCMsgTypeWFStepTaskUpdate,
 		IPCMsgTypeWFReviveWorkflow,
 		IPCMsgTypeWFCancelWorkflow,
 		IPCMsgTypeWFMaintenance,
@@ -167,6 +173,15 @@ func ParseIPCMessage(validator *validator.Validate, msg []byte) (interface{}, er
 
 	case IPCMsgTypeWFStepExecUpdate:
 		var parsed IPCMessageWorkflowStepExecUpdate
+		if err := json.Unmarshal(msg, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
+			)
+		}
+		return parsed, validate(&parsed)
+
+	case IPCMsgTypeWFStepTaskUpdate:
+		var parsed IPCMessageWorkflowStepTaskUpdate
 		if err := json.Unmarshal(msg, &parsed); err != nil {
 			return nil, goutils.NewConsistencyError(
 				fmt.Sprintf("IPC message '%s' parse failed", asBaseMsg.Type), err, true,
@@ -272,6 +287,27 @@ type IPCMessageWorkflowStepExecUpdate struct {
 
 // StringPayload return its payload as a string
 func (q IPCMessageWorkflowStepExecUpdate) StringPayload() (string, error) {
+	t, err := json.Marshal(&q)
+	return string(t), err
+}
+
+// IPCMessageWorkflowStepTaskUpdate delivers a step's terminal outcome keyed by the executing
+// TASK ID - the notify fast-path feedback. The notify callback adapter produces it from a terminal
+// task event (mapping the event type -> step state) while holding only the task ID and doing no DB
+// work; the scheduler worker later resolves task -> step and invokes the step-keyed execution-update
+// reducer. Used by IPCMsgTypeWFStepTaskUpdate.
+type IPCMessageWorkflowStepTaskUpdate struct {
+	BaseIPCMessage
+	// TaskID ID of the task whose terminal event drove this update
+	TaskID string `json:"task_id" validate:"required"`
+	// NewStepState the resolved new step state. The workflow_step_state macro accepts any step
+	// state; the reducer additionally enforces that it is a terminal outcome
+	// (COMPLETE/FAILED/TIMED_OUT/CANCELLED) at handling time.
+	NewStepState WorkflowStepStateENUM `json:"new_step_state" validate:"required,workflow_step_state"`
+}
+
+// StringPayload return its payload as a string
+func (q IPCMessageWorkflowStepTaskUpdate) StringPayload() (string, error) {
 	t, err := json.Marshal(&q)
 	return string(t), err
 }
@@ -454,6 +490,23 @@ func PrepareIPCMsgWFStepExecUpdate(
 			Timestamp: timestamp,
 		},
 		StepID:       stepID,
+		NewStepState: newStepState,
+	}
+}
+
+// PrepareIPCMsgWFStepTaskUpdate build IPC message `IPC_WF_ENG_STEP_TASK_UPDATE`. newStepState is
+// the terminal step outcome mapped from the source task event; the worker resolves taskID -> step.
+func PrepareIPCMsgWFStepTaskUpdate(
+	sender string, taskID string, newStepState WorkflowStepStateENUM, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return IPCMessageWorkflowStepTaskUpdate{
+		BaseIPCMessage: BaseIPCMessage{
+			ID:        ulid.Make().String(),
+			Type:      IPCMsgTypeWFStepTaskUpdate,
+			Sender:    sender,
+			Timestamp: timestamp,
+		},
+		TaskID:       taskID,
 		NewStepState: newStepState,
 	}
 }

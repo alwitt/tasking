@@ -214,6 +214,15 @@ func (s *schedulerImpl) isSupportedWorkflowMessage(
 			fmt.Sprintf("unsupported workflow-step-exec-update message type '%s'", typed.Type),
 		)
 		return false
+	case models.IPCMessageWorkflowStepTaskUpdate:
+		if typed.Type == models.IPCMsgTypeWFStepTaskUpdate {
+			return true
+		}
+		s.recordInvalidMessage(
+			ctx, payload,
+			fmt.Sprintf("unsupported workflow-step-task-update message type '%s'", typed.Type),
+		)
+		return false
 	case models.IPCMessageWorkflowRevive:
 		if typed.Type == models.IPCMsgTypeWFReviveWorkflow {
 			return true
@@ -345,6 +354,23 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			s.recordAndDropInvalidMessage(
 				ctx, msg, payload,
 				fmt.Sprintf("unsupported workflow-step-exec-update message type '%s'", typed.Type),
+			)
+			return nil
+		}
+
+	case models.IPCMessageWorkflowStepTaskUpdate:
+		switch typed.Type {
+		case models.IPCMsgTypeWFStepTaskUpdate:
+			// notify fast-path feedback: resolve task -> step, then apply the outcome.
+			if err := s.applyStepTaskUpdate(ctx, typed.TaskID, typed.NewStepState); err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
+
+		default:
+			s.recordAndDropInvalidMessage(
+				ctx, msg, payload,
+				fmt.Sprintf("unsupported workflow-step-task-update message type '%s'", typed.Type),
 			)
 			return nil
 		}

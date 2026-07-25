@@ -90,13 +90,47 @@ Notes:
 - **Partial publish failures re-publish.** If any channel for an event fails to publish,
   that event is not stamped and is retried on the next poll (hence the duplicate contract).
 
-## Consuming notifications (TBD)
+## Consuming notifications
 
-Subscriber-side support is **not yet decided**. Today a consumer can subscribe directly
-with the `goutils/redis` PubSub client, using the `BuildNotify*ChannelName` helpers to name
-the topics it cares about. Whether `notify` grows its own subscriber helpers — in
-particular for **wildcard/pattern** subscriptions, whose signature depends on how
-subscription setup actually shakes out — is deferred until there is real consuming code to
-shape the API against.
+- **`Consumer`** — the subscriber counterpart to `Producer`. It subscribes to a set of
+  notification topics, deserializes each received payload into a `models.NotificationEvent`, and
+  hands it to a caller-supplied callback. The caller never touches the raw pub/sub envelope.
+  Constructed with `NewConsumer`; driven by `Start`/`Stop`.
 
-This section will be filled in once that support (if any) exists.
+Topics may be **literal channels or glob patterns** (the underlying subscriber uses `PSUBSCRIBE`),
+built via the `BuildNotify*ChannelName` helpers — so a single `Consumer` can follow, say, every
+task subject at once with `notify:subject:task:*`.
+
+```go
+consumer, err := notify.NewConsumer(ctx, notify.NewConsumerParams{
+    Redis: redisClient, // goutilsRedis.Client
+    Name:  "workflow-engine-feedback",
+    Topics: []string{
+        models.BuildNotifySubjectChannelName("task", "*"),        // notify:subject:task:*
+        models.BuildNotifyTypeChannelName(models.SystemEventTypeCompleteTask), // a literal channel
+    },
+    Callback: func(ctx context.Context, event models.NotificationEvent) {
+        // return promptly; offload heavy work
+    },
+})
+if err != nil {
+    return err
+}
+
+if err := consumer.Start(ctx); err != nil {
+    return err
+}
+defer consumer.Stop(ctx) // stops the subscription reader within a bounded wait
+```
+
+Notes:
+
+- **Return promptly from the callback.** It is invoked serially from the subscriber's single reader
+  goroutine; a slow callback stalls consumption and can drop messages. Offload heavy work (DB
+  reconciliation, DAG advancement) onto your own goroutine or queue.
+- **Duplicates happen** — production is at-least-once, so the same event may be delivered more than
+  once. Dedupe on `event.ID`.
+- **Delivery is best-effort** — a `Consumer` offline at broadcast time misses the event. If you need
+  catch-up, read the durable, `id`-ordered audit log directly.
+- **Undeserializable payloads are dropped**, not fatal — a malformed or foreign message on a
+  subscribed channel is logged and skipped; the subscription keeps running.

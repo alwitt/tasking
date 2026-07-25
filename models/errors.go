@@ -151,6 +151,21 @@ func NewNotifyProducerError(message string, core error, getCallStack bool) Notif
 	return NotifyProducerError{BaseError: base}
 }
 
+// NotifyConsumerError error operating the notification consumer component: both the
+// machinery (subscription setup, lifecycle start/stop) and the deliver path (deserializing a
+// received pub/sub payload into a NotificationEvent before invoking the caller's callback).
+// Wraps the underlying cause (e.g. RedisError, ConsistencyError) as Core.
+type NotifyConsumerError struct{ goutils.BaseError }
+
+// NewNotifyConsumerError builds a NotifyConsumerError, optionally capturing the call stack.
+func NewNotifyConsumerError(message string, core error, getCallStack bool) NotifyConsumerError {
+	base := goutils.BaseError{Name: "NotifyConsumerError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return NotifyConsumerError{BaseError: base}
+}
+
 // TaskMaintenanceError error encountered during the scheduler's periodic maintenance
 // sweep (performMaintenance). Used only by performMaintenance to wrap failures of the
 // list-scan transactions and of the per-item handler calls it drives.
