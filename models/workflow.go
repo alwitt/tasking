@@ -280,10 +280,12 @@ func (s WorkflowStep) ValidNextState(newState WorkflowStepStateENUM) error {
 	statesWithTransitions := map[WorkflowStepStateENUM]map[WorkflowStepStateENUM]bool{
 		WorkflowStepStateDefined: {
 			WorkflowStepStatePending:   true,
+			WorkflowStepStateTimedOut:  true,
 			WorkflowStepStateCancelled: true,
 		},
 		WorkflowStepStatePending: {
 			WorkflowStepStateRunning:   true,
+			WorkflowStepStateTimedOut:  true,
 			WorkflowStepStateCancelled: true,
 		},
 		WorkflowStepStateRunning: {

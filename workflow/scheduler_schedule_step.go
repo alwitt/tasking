@@ -37,9 +37,9 @@ commit. A failed submit loses only the poke - the task row is committed PENDING 
 engine's own maintenance re-drives it, and the step is committed RUNNING so the workflow
 maintenance sweep can reconcile it against that task - so a submit failure is logged, not returned.
 
-The workflow-deadline timeout branch (past-deadline -> whole-workflow TIMED_OUT + cancel running
-tasks) is intentionally deferred to a later slice, where it becomes a shared helper that the
-Execution Update handler and the maintenance sweep also use.
+Before dispatching, the workflow deadline is checked: if it has passed, the whole workflow is timed
+out instead (via the shared timeOutWorkflowSteps helper, also used by the Execution Update handler),
+its still-running step tasks are cancelled, and no dispatch occurs.
 
 	@param ctx context.Context - execution context
 	@param stepID string - the workflow step to dispatch
@@ -51,6 +51,9 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 	// The task to submit after the transaction commits (state-before-poke). Empty means nothing
 	// was dispatched (a guard no-op'd), so there is no poke to send.
 	var submitTaskID string
+	// Task IDs to cancel after commit, if the workflow deadline passed and we timed it out instead
+	// of dispatching (state-before-poke, mirrors submitTaskID).
+	var cancelTaskIDs []string
 
 	if dbErr := s.persistence.UseDatabaseInTransaction(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
@@ -112,10 +115,24 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 				return nil
 			}
 
-			// TODO(timeout slice): if workflowEntry.Deadline has passed, do not dispatch - instead
-			// drive the whole workflow (and its non-terminal steps) to TIMED_OUT and cancel any
-			// still-running step tasks. That whole-workflow timeout becomes a shared helper reused
-			// by the Execution Update handler and the maintenance sweep.
+			// Deadline enforcement: if the workflow deadline has passed, do not dispatch - time out
+			// the whole workflow (and its non-terminal steps) instead, and cancel any still-running
+			// step tasks after commit. This is the same shared helper the Execution Update handler
+			// uses. Leaving submitTaskID empty means no dispatch poke is sent below.
+			if now.After(workflowEntry.Deadline) {
+				log.
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					Debugf(
+						"Not dispatching step %s: workflow %s deadline has passed; timing it out",
+						stepID, workflowEntry.ID,
+					)
+				var err error
+				cancelTaskIDs, err = s.timeOutWorkflowSteps(dbCtx, dbClient, workflowEntry, now)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
 
 			// Dispatch: define the step's execution task in this same transaction. The task carries
 			// only the step ID as its Parameters; the step's own Deadline + RetryParams are handed
@@ -182,6 +199,22 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 					"Failed to submit execution task %s for step %s; "+
 						"task engine / maintenance sweep will re-drive it",
 					submitTaskID, stepID,
+				)
+		}
+	}
+
+	// State-before-poke: if we timed the workflow out instead of dispatching, cancel the still-running
+	// step tasks now (after commit). A failed cancel loses only the poke - the task's own deadline /
+	// the maintenance sweep reconciles it - so it is logged, not returned.
+	for _, taskID := range cancelTaskIDs {
+		if err := s.taskClient.CancelTask(ctx, taskID, nil); err != nil {
+			log.
+				WithError(err).
+				WithFields(goutils.UpdateCodePositionInTags(logTags)).
+				Errorf(
+					"Failed to request cancel of task %s for timed-out workflow; "+
+						"the task's own deadline / maintenance sweep will reconcile it",
+					taskID,
 				)
 		}
 	}

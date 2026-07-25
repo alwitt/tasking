@@ -335,13 +335,11 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	case models.IPCMessageWorkflowStepExecUpdate:
 		switch typed.Type {
 		case models.IPCMsgTypeWFStepExecUpdate:
-			// TODO: apply the step's resolved terminal outcome and advance the DAG.
-			return models.NewWorkflowSchedulerError(
-				fmt.Sprintf(
-					"workflow step execution update ('%s' -> '%s') handling not yet implemented",
-					typed.StepID, typed.NewStepState,
-				), nil, true,
-			)
+			// Apply the step's resolved terminal outcome and advance the DAG.
+			if err := s.applyStepExecutionUpdate(ctx, typed.StepID, typed.NewStepState); err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
 
 		default:
 			s.recordAndDropInvalidMessage(

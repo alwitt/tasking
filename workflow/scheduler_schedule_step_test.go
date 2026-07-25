@@ -369,4 +369,39 @@ func TestScheduleWorkflowStep(t *testing.T) {
 
 		assert.Nil(s.scheduleWorkflowStep(utCtx, step.ID))
 	})
+
+	t.Run("past-deadline workflow times out instead of dispatching", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		taskClient := mocktask.NewClient(t)
+		s := newScheduleStepTestScheduler(mockClient, taskClient)
+
+		// A RUNNING workflow whose deadline has already passed.
+		workflow := workflowFixture(models.WorkflowStateRunning)
+		workflow.Deadline = time.Now().UTC().Add(-time.Hour)
+		step := pendingStepFixture(workflow.ID)
+
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflowStepAndExecutorTask(mock.Anything, step.ID, true).
+			Return(step, nil, nil)
+		mockDatabase.EXPECT().GetWorkflow(mock.Anything, workflow.ID).Return(workflow, nil)
+		// timeOutWorkflowSteps path: list steps, flip the PENDING step, flip the workflow. No live
+		// task (the reported step is only PENDING), so nothing to cancel.
+		mockDatabase.EXPECT().
+			ListWorkflowSteps(mock.Anything, workflow.ID).
+			Return([]models.WorkflowStep{step}, nil)
+		mockDatabase.EXPECT().
+			MarkWorkflowStepTimedOut(mock.Anything, workflow.ID, []string{step.ID}, mock.Anything).
+			Return(nil)
+		mockDatabase.EXPECT().MarkWorkflowTimedOut(mock.Anything, workflow.ID, mock.Anything).Return(nil)
+		// No DefineImmediateOneShotTask / LinkWorkflowStepWithExecutorTask / MarkWorkflowStepRunning /
+		// SubmitTask: the strict mocks assert the dispatch path was skipped entirely.
+
+		assert.Nil(s.scheduleWorkflowStep(utCtx, step.ID))
+	})
 }

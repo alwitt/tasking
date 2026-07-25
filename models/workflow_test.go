@@ -71,12 +71,16 @@ func TestWorkflowStepValidNextState(t *testing.T) {
 
 	// The complete set of permitted transitions per the workflow step state machine.
 	allowed := map[models.WorkflowStepStateENUM]map[models.WorkflowStepStateENUM]bool{
+		// DEFINED / PENDING can also be timed out directly by a global workflow timeout (a step
+		// that never ran, or was dispatched but not yet running).
 		models.WorkflowStepStateDefined: {
 			models.WorkflowStepStatePending:   true,
+			models.WorkflowStepStateTimedOut:  true,
 			models.WorkflowStepStateCancelled: true,
 		},
 		models.WorkflowStepStatePending: {
 			models.WorkflowStepStateRunning:   true,
+			models.WorkflowStepStateTimedOut:  true,
 			models.WorkflowStepStateCancelled: true,
 		},
 		models.WorkflowStepStateRunning: {
