@@ -378,12 +378,19 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	case models.IPCMessageWorkflowRevive:
 		switch typed.Type {
 		case models.IPCMsgTypeWFReviveWorkflow:
-			// TODO: revert failed/timed-out steps to DEFINED (+ new deadline if TIMED_OUT).
-			return models.NewWorkflowSchedulerError(
-				fmt.Sprintf(
-					"revive workflow ('%s') handling not yet implemented", typed.WorkflowID,
-				), nil, true,
-			)
+			// Revive a FAILED / TIMED_OUT workflow: revert its failed/timed-out steps to DEFINED
+			// (+ new deadline) and re-run via a Process Workflow poke.
+			revived, dropReason, err := s.reviveWorkflow(ctx, typed.WorkflowID, typed.NewDeadline)
+			if err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
+			if !revived {
+				// Precondition failure (wrong state / missing-or-past new deadline): a client error
+				// that will never become valid on replay, so record + drop rather than wedge the queue.
+				s.recordAndDropInvalidMessage(ctx, msg, payload, dropReason)
+				return nil
+			}
 
 		default:
 			s.recordAndDropInvalidMessage(

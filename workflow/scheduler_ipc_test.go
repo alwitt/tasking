@@ -169,10 +169,6 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 			name: "cancel workflow",
 			env:  models.PrepareIPCMsgWFCancelWorkflow("unit-test", ulid.Make().String(), ts),
 		},
-		{
-			name: "revive workflow",
-			env:  models.PrepareIPCMsgWFReviveWorkflow("unit-test", ulid.Make().String(), nil, ts),
-		},
 	}
 
 	for _, tc := range stubCases {
@@ -244,6 +240,75 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 		mockDatabase.EXPECT().
 			GetWorkflowStepProcessedByTask(mock.Anything, taskID).
 			Return(models.WorkflowStep{}, goutils.NewNotFoundError("no step", gorm.ErrRecordNotFound, true))
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		assert.Nil(s.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("revive routes to the handler and deletes on success", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		mockSender := mockcommon.NewIPCMessageSend(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+		s.ipcSender = mockSender
+
+		wfID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFReviveWorkflow("unit-test", wfID, nil, ts).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
+
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// A FAILED workflow with no steps revives successfully: mark running, list (empty), one poke.
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflow(mock.Anything, wfID).
+			Return(models.Workflow{ID: wfID, State: models.WorkflowStateFailed}, nil)
+		mockDatabase.EXPECT().MarkWorkflowRunning(mock.Anything, wfID, mock.Anything).Return(nil)
+		mockDatabase.EXPECT().
+			ListWorkflowSteps(mock.Anything, wfID).
+			Return([]models.WorkflowStep{}, nil)
+		mockSender.EXPECT().EnqueueMessage(mock.Anything, mock.Anything).Return(nil)
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		assert.Nil(s.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("bad revive is recorded and dropped", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+
+		wfID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFReviveWorkflow("unit-test", wfID, nil, ts).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
+
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// A RUNNING workflow cannot be revived: the handler drops it (revived=false), so the dispatch
+		// loop records it as invalid and DELETES it - it must NOT be left buffered. Two transactions
+		// run: the revive precondition read, then the invalid-message record.
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflow(mock.Anything, wfID).
+			Return(models.Workflow{ID: wfID, State: models.WorkflowStateRunning}, nil)
+		// recordAndDropInvalidMessage records the poison event, then deletes the message.
+		mockDatabase.EXPECT().
+			RecordInvalidTaskIPCMessage(mock.Anything, s.ipcName, payload, mock.Anything).
+			Return(nil)
 		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(s.processOneIPCRequest(utCtx))
