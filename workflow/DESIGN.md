@@ -6,9 +6,7 @@ a system task; the workflow engine owns the DAG orchestration, state management,
 lifecycle, while the task engine owns the actual execution, per-attempt retry, and
 per-attempt timeout of individual steps.
 
-This document describes the operational design of the workflow engine. It supersedes any
-contradicting details in the current implementation — existing code will be adjusted to
-match this design.
+This document describes the operational design of the workflow engine.
 
 ## Contents
 
@@ -201,9 +199,8 @@ Via the **task client**, which enqueues onto the task scheduler queue:
   the workflow engine's fixed creator identity** (see feedback below); that is the entire
   mechanism by which its terminal events later reach the scheduler. No per-task feedback
   target is stamped on the task.
-- **Cancel step task** — request the task engine cancel a step's task. Reuses the task
-  scheduler's existing `IPCMsgTypeCancelTask`. *(The task client does not yet expose a
-  cancel-task method; it will be added during implementation.)*
+- **Cancel step task** — request the task engine cancel a step's task, via the task client's
+  `CancelTask`, which reuses the task scheduler's `IPCMsgTypeCancelTask`.
 
 ### Task Engine → Workflow Scheduler (feedback) — via `notify`
 
@@ -244,8 +241,7 @@ the subscriber's single reader goroutine and **must return promptly**
 Key properties:
 
 - **Task-engine agnostic.** Feedback is a side effect of the audit log the engine already
-  writes; nothing workflow-shaped is added to the `Task` model. (The former `OnTermination`
-  field is **removed** from this design.)
+  writes; nothing workflow-shaped is added to the `Task` model.
 - **Delivery is best-effort.** `notify` is pub/sub: an event broadcast while the scheduler
   is offline is **missed** — Redis does not replay it. This is acceptable *only* because of
   the DB-reconciliation backstop: correctness never rests on the notification. See
@@ -264,6 +260,34 @@ Key properties:
   assumes atomic finalize-and-notify: it treats the broadcast purely as a fast-path poke and,
   when reconciling, reads the task's **committed** terminal state from the DB. A lost or
   never-sent broadcast cannot cause an incorrect outcome, only a delayed one.
+
+### Workflow Scheduler → User (notification) — via `notify`
+
+The engine notifies users of workflow/step progress the **same way** it *consumes* task
+feedback — as a producer for the [`notify`](../notify/DESIGN.md) framework rather than a bespoke
+mechanism. Every workflow and step state transition the scheduler commits writes a
+`SystemEventAudit` row **in the same transaction as the state change** (so the durable outcome
+and the event to broadcast commit atomically, exactly as the task engine does for tasks), and the
+`notify` producer polls those rows and broadcasts each over Redis pub/sub. The scheduler emits no
+notification itself; it just writes the audit row, and `notify` does the rest.
+
+- **Event types** — a full set of workflow-level (`WORKFLOW_RUNNING`, `WORKFLOW_COMPLETE`,
+  `WORKFLOW_FAILED`, `WORKFLOW_TIMED_OUT`, `WORKFLOW_CANCELLING`, `WORKFLOW_CANCELLED`,
+  `WORKFLOW_DEADLINE_UPDATE`, plus `DEFINE_WORKFLOW`/`DELETE_WORKFLOW`) and step-level
+  (`WORKFLOW_STEP_DEFINED`/`PENDING`/`RUNNING`/`COMPLETE`/`FAILED`/`TIMED_OUT`/`CANCELLING`/`CANCELLED`)
+  types is defined in `models.SystemEventTypeENUM`.
+- **Routing.** Each event carries a `SystemEventWorkflowEvents` payload with the `WorkflowID`
+  and the workflow's `Creator`. `notify` routes it on the workflow's subject channel
+  (`subject:workflow:<workflow-id>`, via `models.BuildNotifySubjectChannelName`) and — for a
+  creator-bearing event — on `creator:<user>`. A step event carries the parent `WorkflowID` as
+  its subject and the step ID as detail, so a subscriber watching one workflow sees both its
+  workflow-level and step-level transitions on the single `subject:workflow:<id>` channel.
+
+This is the mirror image of the feedback path above: there the scheduler is a `notify`
+**subscriber** on `creator:<engine>`; here it is a `notify` **producer** whose events reach the
+user's subscription on `subject:workflow:<id>` / `creator:<user>`. Both directions ride the same
+best-effort pub/sub over the same audit-log-is-truth substrate — a lost notification never loses
+the durable audit row.
 
 ### Step ↔ Task Linkage
 
@@ -536,13 +560,13 @@ Execution Update(stepID, newStepState):
         else:
             emit Process Workflow      # fan out newly-unblocked steps
       FAILED:
-        mark step FAILED; mark workflow FAILED     # (notify user — later phase)
+        mark step FAILED; mark workflow FAILED
       TIMED_OUT:
         # all steps share the workflow deadline, so one timeout means all have timed out
         for each non-terminal step (this one included):
             if step is RUNNING: request task engine cancel its task   # don't burn compute
             mark step TIMED_OUT
-        mark workflow TIMED_OUT                         # (notify user — later phase)
+        mark workflow TIMED_OUT
       CANCELLED:
         mark step CANCELLED
         if workflow now settled: mark workflow CANCELLED
@@ -713,7 +737,8 @@ single, uniform recovery path.
   steps, the scheduler simply stops emitting work for it (until the next feedback, user
   action, or maintenance sweep). A quiesced `FAILED` workflow is the canonical case — see
   [Soft-stop: how a `FAILED` workflow quiesces and recovers](#soft-stop-how-a-failed-workflow-quiesces-and-recovers).
-  User notification of state changes is deferred to a later phase.
+  Each such state change still emits a user notification (see
+  [Workflow Scheduler → User](#workflow-scheduler--user-notification--via-notify)).
 
 ---
 
@@ -982,12 +1007,9 @@ to Initialize. Starting it last simply avoids feeding the worker before recovery
 
 ## Deferred to Later Phases
 
-- **User notification** of workflow/step state changes (`FAILED`, `TIMED_OUT`, `COMPLETE`,
-  `CANCELLED`). Note these are the workflow engine's *own* audit events; they flow through
-  the **same** `notify` producer with `subject:workflow:<id>` / `creator:<user>` routing
-  ([`notify/DESIGN.md` §7](../notify/DESIGN.md)), symmetric to how the engine *consumes*
-  task events here.
 - **The workflow engine's creator identity** — the fixed `Creator` string stamped on every
   step task and used as the feedback channel (`notify:creator:<engine>`). It must be
   distinct from any user-facing creator so the engine's subscription sees only its own step
-  tasks. Concrete value/derivation is an implementation detail.
+  tasks. It is implemented as the reserved constant `models.WorkflowExecutionTaskCreator`;
+  the deferred work is only making it configurable per deployment rather than a single fixed
+  value.
