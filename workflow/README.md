@@ -167,6 +167,17 @@ defer scheduler.Stop(ctx)
 `Start` recovers any messages stranded in the scheduler queue buffer, subscribes for step
 feedback, and starts the serial event consumer and the maintenance timer.
 
+> **Required deployment wiring — the `notify` producer must emit creator channels.** The
+> scheduler receives step results by subscribing to `notify:creator:<engine-creator>`. That
+> channel is only populated when the [`notify`](../notify/README.md) **producer** running against
+> the same database is configured with **`EmitCreator: true`** (`models.NotificationProducerConfig`).
+> If it is `false`, the scheduler's fast-path feedback subscription receives **nothing**: the
+> engine stays *correct* — the maintenance sweep reconciles every step against its task's persisted
+> state — but every step outcome is delayed by up to one maintenance interval, on every step,
+> silently (no error is logged anywhere). Treat `EmitCreator: true` as a hard requirement for the
+> feedback fast path, not an optimization. See [DESIGN.md](DESIGN.md) "Task Engine → Workflow
+> Scheduler (feedback)".
+
 ## Reliability model (what you can rely on)
 
 - **Self-healing progress.** The DAG is advanced by IPC pokes *and* a periodic maintenance sweep

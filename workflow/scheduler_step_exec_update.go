@@ -243,8 +243,8 @@ terminal state if the current state's predicate holds. Keyed on the CURRENT work
 
 It re-lists the steps so that a step just written in the caller's transaction is included in the
 aggregate (the current step's state is written before this check, so it participates). It returns
-whether it settled the workflow, so a caller can decide whether a follow-on poke is still needed (the
-Execution Update COMPLETE branch emits Process Workflow only when this did NOT settle).
+whether it settled the workflow, so a caller can decide whether a follow-on poke is still needed
+(the Execution Update COMPLETE branch emits Process Workflow only when this did NOT settle).
 
 This is the shared "advance to terminal state if done" reconciliation the maintenance sweep will
 reuse for its post-per-step workflow-aggregate re-check. (The third sweep aggregate case,
@@ -260,9 +260,12 @@ side effect - so it stays the separate timeOutWorkflowSteps helper.)
 func (s *schedulerImpl) settleWorkflowIfDone(
 	dbCtx context.Context, dbClient db.Database, workflowEntry models.Workflow, now time.Time,
 ) (bool, error) {
-	// Only RUNNING/FAILED (completion) and CANCELLING (cancellation) have a settle predicate.
+	// Only RUNNING (completion) and CANCELLING (cancellation) have a settle predicate. A FAILED
+	// workflow is deliberately excluded: it always retains a non-COMPLETE step (the failure that
+	// made it FAILED), so it can never satisfy the completion predicate, and FAILED -> COMPLETE is
+	// not a legal transition anyway (ValidNextState would reject it). Excluding it here makes "only
+	// a RUNNING workflow completes" structural rather than resting on that upstream invariant.
 	if workflowEntry.State != models.WorkflowStateRunning &&
-		workflowEntry.State != models.WorkflowStateFailed &&
 		workflowEntry.State != models.WorkflowStateCancelling {
 		return false, nil
 	}
@@ -275,9 +278,10 @@ func (s *schedulerImpl) settleWorkflowIfDone(
 	}
 
 	switch workflowEntry.State {
-	case models.WorkflowStateRunning, models.WorkflowStateFailed:
+	case models.WorkflowStateRunning:
 		// COMPLETE requires every step COMPLETE. A FAILED / TIMED_OUT step defeats this predicate, so
-		// a FAILED workflow (which has such a step) never satisfies it.
+		// a workflow with such a step never satisfies it (and such a workflow is FAILED, already
+		// excluded by the guard above).
 		for _, step := range steps {
 			if step.State != models.WorkflowStepStateComplete {
 				return false, nil

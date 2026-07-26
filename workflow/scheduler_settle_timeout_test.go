@@ -125,7 +125,7 @@ func TestSettleWorkflowIfDone(t *testing.T) {
 		assert.False(settled)
 	})
 
-	t.Run("FAILED never satisfies all-COMPLETE, does not settle", func(t *testing.T) {
+	t.Run("FAILED has no settle predicate, short-circuits at the guard", func(t *testing.T) {
 		assert := assert.New(t)
 
 		mockClient := mockdb.NewClient(t)
@@ -133,13 +133,9 @@ func TestSettleWorkflowIfDone(t *testing.T) {
 		s := newHelperTestScheduler(mockClient)
 
 		workflow := workflowFixture(models.WorkflowStateFailed)
-		mockDatabase.EXPECT().
-			ListWorkflowSteps(mock.Anything, workflow.ID).
-			Return([]models.WorkflowStep{
-				stepInState(workflow.ID, models.WorkflowStepStateComplete),
-				stepInState(workflow.ID, models.WorkflowStepStateFailed),
-			}, nil)
-		// No mark: a FAILED step defeats the completion predicate.
+		// No ListWorkflowSteps, no mark: a FAILED workflow is excluded from the completion
+		// predicate outright (it always retains a non-COMPLETE step, and FAILED -> COMPLETE is not a
+		// legal transition), so it short-circuits at the guard before ever listing steps.
 
 		settled, err := s.settleWorkflowIfDone(utCtx, mockDatabase, workflow, now)
 		assert.Nil(err)

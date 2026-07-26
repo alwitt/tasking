@@ -1044,6 +1044,8 @@ func (c *databaseImpl) GetWorkflowStepAndExecutorTask(
 	// one-to-many (a revived step re-runs under a fresh task while the prior attempt's task and link
 	// persist), so order most-recent-first: callers that key on a single task (e.g. the maintenance
 	// sweep reconciling a step against its current attempt) get the latest task deterministically.
+	// task.id is a time-sortable ULID, so it is the tiebreak when two tasks share a created_at,
+	// keeping tasks[0] unambiguously the current attempt even at coarse timestamp resolution.
 	query := c.db.
 		Table("tasks as task").
 		Select("task.*").
@@ -1051,7 +1053,8 @@ func (c *databaseImpl) GetWorkflowStepAndExecutorTask(
 			"INNER JOIN workflow_step_runner_tasks AS link ON link.task_id = task.id",
 		).
 		Where("link.step_id = ?", stepID).
-		Order("task.created_at DESC")
+		Order("task.created_at DESC").
+		Order("task.id DESC")
 	if activeTask {
 		query = query.Where("task.state in ?", []models.TaskStateENUM{
 			models.TaskStatePending,
