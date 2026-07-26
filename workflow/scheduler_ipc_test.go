@@ -155,44 +155,38 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 	utCtx := context.Background()
 	ts := time.Now().UTC()
 
-	// dispatchEnvelope build the wire envelope for a workflow message via its Prepare* constructor.
-	// stubCases: each remaining event message that still hits an unimplemented stub. The handler
-	// returns a fatal error, so the message must be LEFT buffered (DeleteBufferedMessage NOT
-	// called) for startup replay. (Process Workflow, Schedule Workflow Step, and Workflow Step
-	// Execution Update are now implemented and have their own tests in scheduler_process_workflow_test.go
-	// / scheduler_schedule_step_test.go / scheduler_step_exec_update_test.go, so they are not listed here.)
-	stubCases := []struct {
-		name string
-		env  goutilsRedis.QueueMessageEnvelope
-	}{
-		{
-			name: "cancel workflow",
-			env:  models.PrepareIPCMsgWFCancelWorkflow("unit-test", ulid.Make().String(), ts),
-		},
-	}
+	// Every workflow event message shape (Process Workflow, Schedule Workflow Step, Execution Update,
+	// Step Task Update, Revive, Cancel) is now implemented and routed here; each has its own handler
+	// test file. The subtests below cover the parse -> dispatch wiring and the delete contract.
 
-	for _, tc := range stubCases {
-		t.Run(tc.name+" stub leaves message buffered", func(t *testing.T) {
-			assert := assert.New(t)
+	t.Run("cancel routes to the handler and deletes on success", func(t *testing.T) {
+		assert := assert.New(t)
 
-			mockClient := mockdb.NewClient(t)
-			ipcReceiver := mockcommon.NewIPCMessageReceive(t)
-			s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
 
-			payload, err := tc.env.StringPayload()
-			require.NoError(t, err)
+		wfID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFCancelWorkflow("unit-test", wfID, ts).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
 
-			ipcReceiver.EXPECT().
-				DequeueMessage(mock.Anything, true, mock.Anything).
-				Return(fixedEnvelope{payload: payload}, nil)
-			// No DeleteBufferedMessage expectation: the fatal stub error must leave it buffered.
-			// No DB expectation: a valid message is not recorded as poison.
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// An already-CANCELLED workflow makes cancel a benign NOOP: the handler returns nil and the
+		// dispatch loop deletes the message. This confirms parse + routing.
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflow(mock.Anything, wfID).
+			Return(models.Workflow{ID: wfID, State: models.WorkflowStateCancelled}, nil)
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
-			err = s.processOneIPCRequest(utCtx)
-			assert.NotNil(err)
-			assertWorkflowSchedulerError(t, err)
-		})
-	}
+		assert.Nil(s.processOneIPCRequest(utCtx))
+	})
 
 	t.Run("maintenance NOOP deletes the message", func(t *testing.T) {
 		assert := assert.New(t)

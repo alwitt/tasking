@@ -308,12 +308,11 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			}
 
 		case models.IPCMsgTypeWFCancelWorkflow:
-			// TODO: drive workflow cancellation.
-			return models.NewWorkflowSchedulerError(
-				fmt.Sprintf(
-					"cancel workflow ('%s') handling not yet implemented", typed.WorkflowID,
-				), nil, true,
-			)
+			// Mark the workflow CANCELLING, cancel in-flight step tasks, and settle if nothing drains.
+			if err := s.cancelWorkflow(ctx, typed.WorkflowID); err != nil {
+				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
+				return err
+			}
 
 		default:
 			// Poison message: unsupported message type. Record and drop.
