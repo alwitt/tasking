@@ -144,11 +144,11 @@ func TestProcessOneIPCRequestDequeueAndParse(t *testing.T) {
 	})
 }
 
-// TestProcessOneIPCRequestDispatch covers the parse -> dispatch wiring and the delete contract
-// for each workflow message shape. For this skeleton slice the five event cases are stubs that
-// return a "not yet implemented" WorkflowSchedulerError, so the message is left buffered (the
-// scheduler crashed on it - startup recovery will replay it); Maintenance is a NOOP, so its
-// message is deleted; an unknown type is recorded and dropped.
+// TestProcessOneIPCRequestDispatch covers the parse -> dispatch wiring and the delete contract for
+// each workflow message shape. The delete keys off handler *completion*, not success: a valid
+// message is deleted once its handler returns (nil OR error); the error is returned for the caller
+// to classify (fatal SQLError vs. log-and-continue) but never changes the delete. An unknown type is
+// recorded and dropped. Each subtest drives its handler's benign no-op through the DB mock.
 func TestProcessOneIPCRequestDispatch(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 
@@ -344,6 +344,76 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(s.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("non-fatal handler error still deletes the message and returns the error", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+
+		wfID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFCancelWorkflow("unit-test", wfID, ts).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
+
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// The handler fails with a non-DB error (a plain simErr, not a models.SQLError). The handler
+		// nonetheless *completed*, so the message IS deleted (only a crash strands a message). The
+		// error is returned for the caller to classify - and it is NOT fatal, so processQueue would
+		// log and continue; the maintenance sweep re-drives the work. This is the key regression
+		// guard: a failing handler must not leave a message to be replayed.
+		simErr := fmt.Errorf("simulated failure")
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflow(mock.Anything, wfID).
+			Return(models.Workflow{}, simErr)
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		err = s.processOneIPCRequest(utCtx)
+		assert.NotNil(err)
+		// Non-fatal: processQueue would continue rather than log.Fatal.
+		assert.False(isFatalDBError(err))
+	})
+
+	t.Run("fatal SQLError handler error still deletes the message and returns a fatal error", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
+
+		wfID := ulid.Make().String()
+		payload, err := models.PrepareIPCMsgWFCancelWorkflow("unit-test", wfID, ts).StringPayload()
+		require.NoError(t, err)
+		msg := fixedEnvelope{payload: payload}
+
+		ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// The handler fails because the database is broken (models.SQLError). The message is still
+		// deleted (the handler completed - the DB fault will recur on every message, this is not a
+		// per-message replay loop), and the returned error is classified fatal so processQueue stops.
+		simErr := fmt.Errorf("simulated failure")
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			GetWorkflow(mock.Anything, wfID).
+			Return(models.Workflow{}, models.NewSQLError("database is down", simErr, true))
+		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		err = s.processOneIPCRequest(utCtx)
+		assert.NotNil(err)
+		// Fatal: processQueue would log.Fatal on this class.
+		assert.True(isFatalDBError(err))
 	})
 }
 

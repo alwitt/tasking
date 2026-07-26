@@ -13,6 +13,15 @@ import (
 	"github.com/apex/log"
 )
 
+// isFatalDBError report whether the error chain contains a models.SQLError, which indicates the
+// database or the connection to it has failed. Such errors are fatal for the scheduler and must
+// stop the consumer rather than be recovered per-request. Mirrors the task package's helper of the
+// same name (errors.As sees the SQLError through the wrapped scheduler/persistence error chain).
+func isFatalDBError(err error) bool {
+	var sqlErr models.SQLError
+	return errors.As(err, &sqlErr)
+}
+
 // processQueue process the messages on the workflow scheduler queue
 func (s *schedulerImpl) processQueue() {
 	logTags := s.GetLogTagsForContext(s.runCtx)
@@ -37,10 +46,22 @@ func (s *schedulerImpl) processQueue() {
 		}
 
 		if err := s.processOneIPCRequest(s.runCtx); err != nil {
+			// The message has already been dealt with (a completed handler always deletes its
+			// message; only a crash strands one for replay). The error only decides whether to
+			// stop: a broken database (models.SQLError) is fatal - every message would fail
+			// identically, so continuing is meaningless. Any other failure is logged and
+			// processing continues; the maintenance sweep re-drives the stranded work from the
+			// DB (the source of truth), so a single failing message never wedges the scheduler.
+			if isFatalDBError(err) {
+				log.
+					WithError(err).
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+			}
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+				Errorf("Failed to process IPC message (continuing):\n%+v", err)
 		}
 	}
 }
@@ -252,20 +273,22 @@ func (s *schedulerImpl) isSupportedWorkflowMessage(
 processOneIPCRequest process one IPC request on the workflow scheduler queue.
 
 The scheduler queue is a reliable queue: DequeueMessage moves the message into a buffer queue,
-and the message is only removed from that buffer once we are done with it. The delete contract
-here is therefore explicit, not a blanket defer:
+and the message is only removed from that buffer once we are done with it. The buffer guards
+against exactly one thing - an application crash/panic mid-handling, where the handler never
+runs to completion. So the delete contract is keyed off *completion*, not success:
 
-  - Valid message, handled successfully -> delete from buffer (done with it).
+  - Handler ran to completion (returned nil OR an error) -> delete from the buffer. We are done
+    with the message; only a crash (never a returned error) should strand one for replay.
   - Poison message (unreadable, unparsable, or unsupported type) -> record an audit event and
     delete from buffer; it can never be processed, so replaying it would loop forever.
-  - Valid message but the handler returned a fatal error -> leave the message in the buffer (do
-    NOT delete) and return the error; startup buffer recovery (recoverBufferedMessages) will
-    replay it on the next start.
 
-Unlike the task scheduler, the handler runs INLINE on this goroutine (there is no worker to
-Submit to). For this skeleton slice each handler is a stub that returns a "not yet implemented"
-WorkflowSchedulerError (except Maintenance, a logged NOOP); the real bodies land in later slices
-by filling these cases in place.
+Unlike the task scheduler this is the whole engine's only consumer, but the handling is the
+same: the handler runs INLINE on this goroutine (there is no worker to Submit to).
+
+A handler error is returned to the caller (processQueue) *after* the delete. The error class
+does NOT affect the delete - it only lets the caller decide whether to stop (a broken DB) or
+log and continue (the maintenance sweep will re-drive the work from the DB). A DequeueMessage
+read error is an engine-level fault with no message to delete, so it is returned directly.
 
 	@param ctx context.Context - execution context
 */
@@ -273,7 +296,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	logTags := s.GetLogTagsForContext(ctx)
 	msg, err := s.ipcReceiver.DequeueMessage(ctx, true, nil)
 	if err != nil {
-		// FATAL
+		// FATAL: could not read the queue. No message was staged, so nothing to delete.
 		return models.NewWorkflowSchedulerError("failed to read queue", err, true)
 	}
 
@@ -297,22 +320,22 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		return nil
 	}
 
+	// handlerErr captures the outcome of the dispatched handler. Whether it is nil or not, the
+	// message below is deleted (the handler completed); handlerErr is only returned afterward so
+	// the caller can classify fatal-vs-continue. A poison/unsupported message returns early (it
+	// is dropped, not handled) and never reaches the shared delete below.
+	var handlerErr error
+
 	switch typed := parsed.(type) {
 	case models.IPCMessageWorkflow:
 		switch typed.Type {
 		case models.IPCMsgTypeWFProcessWorkflow:
 			// Start the workflow (PENDING -> RUNNING on first receipt) and fan out startable steps.
-			if err := s.processWorkflow(ctx, typed.WorkflowID); err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
+			handlerErr = s.processWorkflow(ctx, typed.WorkflowID)
 
 		case models.IPCMsgTypeWFCancelWorkflow:
 			// Mark the workflow CANCELLING, cancel in-flight step tasks, and settle if nothing drains.
-			if err := s.cancelWorkflow(ctx, typed.WorkflowID); err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
+			handlerErr = s.cancelWorkflow(ctx, typed.WorkflowID)
 
 		default:
 			// Poison message: unsupported message type. Record and drop.
@@ -327,10 +350,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		switch typed.Type {
 		case models.IPCMsgTypeWFScheduleStep:
 			// Dispatch this step to the task engine (PENDING -> RUNNING + submit its task).
-			if err := s.scheduleWorkflowStep(ctx, typed.StepID); err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
+			handlerErr = s.scheduleWorkflowStep(ctx, typed.StepID)
 
 		default:
 			s.recordAndDropInvalidMessage(
@@ -344,10 +364,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		switch typed.Type {
 		case models.IPCMsgTypeWFStepExecUpdate:
 			// Apply the step's resolved terminal outcome and advance the DAG.
-			if err := s.applyStepExecutionUpdate(ctx, typed.StepID, typed.NewStepState); err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
+			handlerErr = s.applyStepExecutionUpdate(ctx, typed.StepID, typed.NewStepState)
 
 		default:
 			s.recordAndDropInvalidMessage(
@@ -361,10 +378,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		switch typed.Type {
 		case models.IPCMsgTypeWFStepTaskUpdate:
 			// notify fast-path feedback: resolve task -> step, then apply the outcome.
-			if err := s.applyStepTaskUpdate(ctx, typed.TaskID, typed.NewStepState); err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
+			handlerErr = s.applyStepTaskUpdate(ctx, typed.TaskID, typed.NewStepState)
 
 		default:
 			s.recordAndDropInvalidMessage(
@@ -381,10 +395,9 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			// (+ new deadline) and re-run via a Process Workflow poke.
 			revived, dropReason, err := s.reviveWorkflow(ctx, typed.WorkflowID, typed.NewDeadline)
 			if err != nil {
-				// Fatal: leave the message buffered for startup replay (delete contract unchanged).
-				return err
-			}
-			if !revived {
+				// Handler failure: capture, delete, and let the caller classify (same as any handler).
+				handlerErr = err
+			} else if !revived {
 				// Precondition failure (wrong state / missing-or-past new deadline): a client error
 				// that will never become valid on replay, so record + drop rather than wedge the queue.
 				s.recordAndDropInvalidMessage(ctx, msg, payload, dropReason)
@@ -403,9 +416,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		switch typed.Type {
 		case models.IPCMsgTypeWFMaintenance:
 			// Run the Layer 2 recovery / liveness reconciliation sweep over all non-terminal workflows.
-			if err := s.runMaintenanceSweep(ctx); err != nil {
-				return err // fatal: leave buffered for startup replay (delete contract unchanged)
-			}
+			handlerErr = s.runMaintenanceSweep(ctx)
 
 		default:
 			s.recordAndDropInvalidMessage(
@@ -424,7 +435,8 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		return nil
 	}
 
-	// Valid message handled successfully - done with it, delete from the buffer.
+	// The handler ran to completion (success or failure) - done with the message, delete it from
+	// the buffer. The delete is best-effort and must not mask handlerErr.
 	if err := s.ipcReceiver.DeleteBufferedMessage(ctx, msg); err != nil {
 		log.
 			WithError(err).
@@ -432,5 +444,5 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			Error("Failed to delete processed IPC message from queue buffer")
 	}
 
-	return nil
+	return handlerErr
 }
