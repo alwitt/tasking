@@ -45,6 +45,12 @@ type schedulerImpl struct {
 	runCtx       context.Context
 	runCtxCancel context.CancelFunc
 
+	// onFatal is invoked (at most once, guarded by onFatalOnce) when the processing goroutine
+	// hits an unrecoverable fault, instead of terminating the process directly. Defaulted in the
+	// constructor to a log.Fatal wrapper when the caller supplies nothing.
+	onFatal     models.OnFatalCB
+	onFatalOnce sync.Once
+
 	maintenanceTimer goutils.IntervalTimer
 
 	ipcName     string
@@ -69,6 +75,12 @@ type NewSchedulerParams struct {
 	IPCReceiverFactory IPCMsgReceiverFactoryCB `validate:"required"`
 	// IPCSenderFactory factory function to define Redis based IPC message senders
 	IPCSenderFactory IPCMsgSenderFactoryCB `validate:"required"`
+	// OnFatal, when set, is invoked (at most once) when the processing goroutine hits an
+	// unrecoverable fault instead of terminating the process. reporter identifies the faulting
+	// thread; err carries the cause (with code position in its chain); timestamp is when it was
+	// detected. When nil, the default logs and calls log.Fatal, preserving prior behavior. The
+	// goroutine exits after the callback runs.
+	OnFatal models.OnFatalCB
 }
 
 /*
@@ -95,6 +107,13 @@ func NewScheduler(
 		return nil, goutils.NewBadInputError("scheduler param is invalid", err, true)
 	}
 
+	// Default the fatal-fault callback to the prior behavior (log and terminate the process) when
+	// the caller supplies nothing.
+	onFatal := params.OnFatal
+	if onFatal == nil {
+		onFatal = defaultOnFatal
+	}
+
 	instance := &schedulerImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
@@ -106,7 +125,8 @@ func NewScheduler(
 		config:         params.Config,
 		wg:             &sync.WaitGroup{},
 		persistence:    params.Persistence,
-		ipcName:        "scheduler",
+		onFatal:        onFatal,
+		ipcName:        "task-scheduler",
 		taskIPcSenders: map[string]common.IPCMessageSend{},
 	}
 	instance.runCtx, instance.runCtxCancel = context.WithCancel(parentCtx)
@@ -231,4 +251,10 @@ func (s *schedulerImpl) Stop(ctx context.Context) error {
 	s.runCtxCancel()
 	// Wait for all threads to finish
 	return goutils.TimeBoundedWaitGroupWait(ctx, s.wg, time.Second*5)
+}
+
+// reportFatal invokes the parent's OnFatal callback at most once for the lifetime of this
+// scheduler, regardless of how many times a fatal fault is encountered.
+func (s *schedulerImpl) reportFatal(reporter string, err error, timestamp time.Time) {
+	s.onFatalOnce.Do(func() { s.onFatal(reporter, err, timestamp) })
 }

@@ -84,6 +84,12 @@ type receiverImpl struct {
 
 	ipcMsgPoolLock             *sync.Mutex
 	execInstanceOriginalIPCMsg map[string]goutilsRedis.QueueMessageEnvelope
+
+	// onFatal is invoked (at most once, guarded by onFatalOnce) when a queue-processing goroutine
+	// hits an unrecoverable fault, instead of terminating the process directly. Defaulted in the
+	// constructor to a log.Fatal wrapper when the caller supplies nothing.
+	onFatal     models.OnFatalCB
+	onFatalOnce sync.Once
 }
 
 // NewReceiverParams init parameters for a task receiver
@@ -104,6 +110,12 @@ type NewReceiverParams struct {
 	IPCReceiverFactory IPCMsgReceiverFactoryCB `validate:"required"`
 	// IPCSenderFactory factory function to define Redis based IPC message senders
 	IPCSenderFactory IPCMsgSenderFactoryCB `validate:"required"`
+	// OnFatal, when set, is invoked (at most once) when a queue-processing goroutine hits an
+	// unrecoverable fault instead of terminating the process. reporter identifies the faulting
+	// queue thread; err carries the cause (with code position in its chain); timestamp is when it
+	// was detected. When nil, the default logs and calls log.Fatal, preserving prior behavior. The
+	// goroutine exits after the callback runs.
+	OnFatal models.OnFatalCB
 }
 
 /*
@@ -128,6 +140,13 @@ func NewReceiver(
 		return nil, goutils.NewBadInputError("receiver param is invalid", err, true)
 	}
 
+	// Default the fatal-fault callback to the prior behavior (log and terminate the process) when
+	// the caller supplies nothing.
+	onFatal := params.OnFatal
+	if onFatal == nil {
+		onFatal = defaultOnFatal
+	}
+
 	instance := &receiverImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
@@ -139,6 +158,7 @@ func NewReceiver(
 		config:                     params.Config,
 		support:                    params.Support,
 		wg:                         &sync.WaitGroup{},
+		onFatal:                    onFatal,
 		executors:                  map[string]Executor{},
 		ipcReceivers:               map[string]common.IPCMessageReceive{},
 		ipcMsgPoolLock:             &sync.Mutex{},
@@ -920,12 +940,30 @@ func (r *receiverImpl) processOneQueue(
 		}
 
 		if err := r.processOneIPCRequest(r.workerCtx, queueName, receiver, executor); err != nil {
+			// The error only decides whether to stop this queue thread: a broken database
+			// (models.SQLError) is fatal - every message would fail identically, so continuing is
+			// meaningless. Any other failure is logged and processing continues.
+			if isFatalDBError(err) {
+				log.
+					WithError(err).
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					Errorf("Encountered fatal error while processing IPC messages:\n%+v", err)
+				// Hand the fault to the parent application and stop this queue thread.
+				r.reportFatal(r.config.Name+"/receiver:"+queueName, err, time.Now())
+				return
+			}
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+				Errorf("Failed to process IPC message on queue '%s' (continuing):\n%+v", queueName, err)
 		}
 	}
+}
+
+// reportFatal invokes the parent's OnFatal callback at most once for the lifetime of this
+// receiver, regardless of how many queue threads trip a fatal fault simultaneously.
+func (r *receiverImpl) reportFatal(reporter string, err error, timestamp time.Time) {
+	r.onFatalOnce.Do(func() { r.onFatal(reporter, err, timestamp) })
 }
 
 /*

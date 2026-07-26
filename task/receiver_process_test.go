@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -431,5 +432,62 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			errors.As(err, &sqlErr), "expected SQLError in chain, got %T: %v", err, err,
 		)
 		assert.Empty(r.execInstanceOriginalIPCMsg)
+	})
+}
+
+// TestReceiverReportFatal verifies the receiver's OnFatal plumbing: reportFatal forwards the
+// (reporter, err, timestamp) fault to the caller-supplied callback, and does so at most once for
+// the lifetime of the receiver even when tripped concurrently. Because the receiver runs one
+// processOneQueue goroutine per task queue, several queue threads can hit the same broken-DB fault
+// simultaneously; the once-guard ensures the parent's callback still fires exactly once.
+func TestReceiverReportFatal(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	simErr := fmt.Errorf("simulated failure")
+
+	t.Run("forwards the fault to the callback", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var gotReporter string
+		var gotErr error
+		var gotTS time.Time
+		var calls int
+		r := newProcessTestReceiver(t, mockdb.NewClient(t), nil)
+		r.onFatal = func(reporter string, err error, timestamp time.Time) {
+			calls++
+			gotReporter, gotErr, gotTS = reporter, err, timestamp
+		}
+
+		now := time.Now().UTC()
+		r.reportFatal("unit-test-worker/receiver:some-queue", simErr, now)
+
+		assert.Equal(1, calls)
+		assert.Equal("unit-test-worker/receiver:some-queue", gotReporter)
+		assert.Equal(simErr, gotErr)
+		assert.Equal(now, gotTS)
+	})
+
+	t.Run("invokes the callback at most once across queue threads", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var calls int32
+		r := newProcessTestReceiver(t, mockdb.NewClient(t), nil)
+		r.onFatal = func(_ string, _ error, _ time.Time) {
+			atomic.AddInt32(&calls, 1)
+		}
+
+		// Simulate N queue threads tripping the same broken-DB fault at once.
+		var wg sync.WaitGroup
+		for i := 0; i < 16; i++ {
+			queue := fmt.Sprintf("queue-%d", i)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r.reportFatal("unit-test-worker/receiver:"+queue, simErr, time.Now())
+			}()
+		}
+		wg.Wait()
+
+		assert.Equal(int32(1), atomic.LoadInt32(&calls))
 	})
 }

@@ -13,6 +13,9 @@ import (
 
 // UnitTestCallbackCollector unit-testing interface for collecting callbacks
 type UnitTestCallbackCollector interface {
+	// OnFatal called when background task need to report fatal error
+	OnFatal(reporter string, err error, timestamp time.Time)
+
 	// OnComplete called when task execution completes
 	OnComplete(ctx context.Context, instanceID string, err error, timestamp time.Time)
 

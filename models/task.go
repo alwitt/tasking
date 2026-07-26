@@ -13,6 +13,14 @@ import (
 	"gorm.io/datatypes"
 )
 
+// OnFatalCB is invoked by a worker thread when it hits an unrecoverable fault, handing the
+// decision of what to do about it (typically graceful shutdown) back to the parent application
+// instead of terminating the process from inside a library goroutine.
+//
+//	reporter identifies the faulting thread; err carries the cause (its chain includes the code
+//	position); timestamp is when the fault was detected.
+type OnFatalCB func(reporter string, err error, timestamp time.Time)
+
 // ======================================================================================
 // Task retry
 

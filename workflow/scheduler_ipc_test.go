@@ -12,6 +12,7 @@ import (
 	"github.com/alwitt/tasking/db"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
+	mocktest "github.com/alwitt/tasking/mocks/test"
 	"github.com/alwitt/tasking/models"
 	"github.com/apex/log"
 	"github.com/go-playground/validator/v10"
@@ -664,5 +665,46 @@ func TestRecoverBufferedMessages(t *testing.T) {
 		ipcReceiver.EXPECT().ReEnqueueOnMainQueue(mock.Anything, valid).Return(nil).Once()
 
 		assert.Nil(s.recoverBufferedMessages(utCtx))
+	})
+}
+
+// TestSchedulerReportFatal verifies the workflow scheduler's OnFatal plumbing: reportFatal forwards
+// the (reporter, err, timestamp) fault to the caller-supplied callback, and does so at most once for
+// the lifetime of the scheduler even when tripped concurrently. This is the piece processQueue
+// relies on to hand a fatal fault to the parent instead of calling log.Fatal directly.
+func TestSchedulerReportFatal(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	simErr := fmt.Errorf("simulated failure")
+
+	t.Run("forwards the fault to the callback", func(t *testing.T) {
+		cbMock := mocktest.NewUnitTestCallbackCollector(t)
+		s := newDispatchTestScheduler(t, mockdb.NewClient(t), nil)
+		s.onFatal = cbMock.OnFatal
+
+		now := time.Now().UTC()
+		cbMock.EXPECT().OnFatal("workflow-scheduler", simErr, now).Return().Once()
+
+		s.reportFatal("workflow-scheduler", simErr, now)
+	})
+
+	t.Run("invokes the callback at most once under concurrency", func(t *testing.T) {
+		// The single .Once() expectation is itself the assertion: the mock fails on any second
+		// call, so 16 concurrent reportFatal calls slipping past the guard would be caught.
+		cbMock := mocktest.NewUnitTestCallbackCollector(t)
+		s := newDispatchTestScheduler(t, mockdb.NewClient(t), nil)
+		s.onFatal = cbMock.OnFatal
+
+		cbMock.EXPECT().OnFatal("workflow-scheduler", simErr, mock.Anything).Return().Once()
+
+		var wg sync.WaitGroup
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.reportFatal("workflow-scheduler", simErr, time.Now())
+			}()
+		}
+		wg.Wait()
 	})
 }

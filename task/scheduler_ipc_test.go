@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -817,5 +819,64 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(simErr)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
+	})
+}
+
+// TestSchedulerReportFatal verifies the scheduler's OnFatal plumbing: reportFatal forwards the
+// (reporter, err, timestamp) fault to the caller-supplied callback, and does so at most once for
+// the lifetime of the scheduler even when tripped concurrently from multiple goroutines (a real DB
+// outage would surface the same fault repeatedly). This is the piece processQueue relies on to hand
+// a fatal fault to the parent instead of calling log.Fatal directly.
+//
+// A hand-rolled callback is used here (rather than the mocks/test collector) because this is a
+// white-box `package task` test, and mocks/test imports `task` - see
+// [[tasking-whitebox-mock-import-cycle]].
+func TestSchedulerReportFatal(t *testing.T) {
+	log.SetLevel(log.DebugLevel)
+
+	simErr := fmt.Errorf("simulated failure")
+
+	t.Run("forwards the fault to the callback", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var gotReporter string
+		var gotErr error
+		var gotTS time.Time
+		var calls int
+		s := newProcessTestScheduler(mockdb.NewClient(t), nil)
+		s.onFatal = func(reporter string, err error, timestamp time.Time) {
+			calls++
+			gotReporter, gotErr, gotTS = reporter, err, timestamp
+		}
+
+		now := time.Now().UTC()
+		s.reportFatal("task-scheduler", simErr, now)
+
+		assert.Equal(1, calls)
+		assert.Equal("task-scheduler", gotReporter)
+		assert.Equal(simErr, gotErr)
+		assert.Equal(now, gotTS)
+	})
+
+	t.Run("invokes the callback at most once under concurrency", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var calls int32
+		s := newProcessTestScheduler(mockdb.NewClient(t), nil)
+		s.onFatal = func(_ string, _ error, _ time.Time) {
+			atomic.AddInt32(&calls, 1)
+		}
+
+		var wg sync.WaitGroup
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.reportFatal("task-scheduler", simErr, time.Now())
+			}()
+		}
+		wg.Wait()
+
+		assert.Equal(int32(1), atomic.LoadInt32(&calls))
 	})
 }

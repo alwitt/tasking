@@ -281,14 +281,25 @@ crash/replay loop.
 
 ### 7.3 Fatal vs. recoverable errors
 
-Only a `models.SQLError` (the database or its connection is broken) is **fatal** — the consumer
-goroutine stops via `log.Fatal`, because no per-request recovery is meaningful when the DB is down
-and every message would fail identically (so this is not a per-message loop). Both consumers use the
-same `isFatalDBError` (`errors.As` for `SQLError`, which is found through the wrapped error chain)
-to make this call.
+Only a `models.SQLError` (the database or its connection is broken) is **fatal** — no per-request
+recovery is meaningful when the DB is down and every message would fail identically (so this is not a
+per-message loop). The scheduler consumer, the workflow-scheduler consumer, and each receiver
+per-queue consumer all use the same `isFatalDBError` (`errors.As` for `SQLError`, found through the
+wrapped error chain) to make this call.
 
-For the **scheduler** the split is expressed as two independent decisions in `processOneIPCRequest`
-and `processQueue`:
+**Handing a fatal fault to the parent — `OnFatal`.** `tasking` is a library with a fire-and-forget
+`Start`, so a worker goroutine must not decide the host process's lifetime by calling `os.Exit`
+directly. Each of the three worker types accepts an optional `OnFatal(reporter, err, timestamp)`
+callback on its constructor params (`NewSchedulerParams`, `NewWorkflowSchedulerParams`,
+`NewReceiverParams`). When a consumer goroutine hits a fatal `SQLError` it invokes the callback and
+then **exits that goroutine** (it does not loop re-firing on a permanently-broken DB), leaving the
+decision of what to do — typically a graceful shutdown — to the parent application. The callback is
+guarded by a per-component `sync.Once` (`reportFatal`), so even when several receiver queue threads
+trip the same outage at once the parent is notified exactly once. When no callback is supplied, the
+default preserves the prior behavior: log the fault and `log.Fatal`.
+
+For the **scheduler** (and the **workflow scheduler**, which mirrors it) the split is expressed as
+two independent decisions in `processOneIPCRequest` and `processQueue`:
 
 - **Delete keys off *completion*, not success.** The reliable-queue buffer guards against exactly
   one thing — an application crash/panic mid-handling, where the handler never returns. So once a
@@ -296,13 +307,16 @@ and `processQueue`:
   a message for `recoverBufferedMessages` to replay. A returned error never strands a message, so a
   deterministically-failing handler cannot become a replay crash-loop.
 - **The error class decides only stop-vs-continue.** After the delete, `processOneIPCRequest`
-  returns the handler error and `processQueue` classifies it: a `models.SQLError` is fatal
-  (`log.Fatal`); anything else is logged and processing continues. The maintenance sweep re-drives
-  the stranded work from the DB (the source of truth), so a single failing message never wedges the
-  scheduler.
+  returns the handler error and `processQueue` classifies it: a `models.SQLError` reports via
+  `OnFatal` and stops the consumer; anything else is logged and processing continues. The
+  maintenance sweep re-drives the stranded work from the DB (the source of truth), so a single
+  failing message never wedges the scheduler.
 
-For the **receiver**, the equivalent recoverable handling drops the message, reports the failure to
-the scheduler, and continues.
+The **receiver** shares the same `SQLError`-only fatal split. Most handler failures never surface as
+a returned error at all — a bad request is dropped, the failure is reported to the scheduler, and the
+queue thread continues. Only an error that propagates out of `processOneIPCRequest` reaches the
+fatal-vs-continue decision in `processOneQueue`: a `models.SQLError` reports via `OnFatal` and stops
+that queue thread, anything else is logged and the thread continues.
 
 ## 8. Engine failure vs. execution failure
 

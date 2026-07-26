@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/alwitt/goutils"
 	goutilsRedis "github.com/alwitt/goutils/redis"
@@ -47,7 +48,11 @@ func (s *schedulerImpl) processQueue() {
 				log.
 					WithError(err).
 					WithFields(goutils.UpdateCodePositionInTags(logTags)).
-					Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+					Errorf("Encountered fatal error while processing IPC messages:\n%+v", err)
+				// Hand the fault to the parent application and stop this thread; the DB is broken,
+				// so every subsequent message would fail identically.
+				s.reportFatal(s.ipcName, err, time.Now())
+				return
 			}
 			log.
 				WithError(err).

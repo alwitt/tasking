@@ -351,3 +351,55 @@ func (_c *UnitTestCallbackCollector_OnComplete_Call) RunAndReturn(run func(ctx c
 	_c.Run(run)
 	return _c
 }
+
+// OnFatal provides a mock function for the type UnitTestCallbackCollector
+func (_mock *UnitTestCallbackCollector) OnFatal(reporter string, err error, timestamp time.Time) {
+	_mock.Called(reporter, err, timestamp)
+	return
+}
+
+// UnitTestCallbackCollector_OnFatal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OnFatal'
+type UnitTestCallbackCollector_OnFatal_Call struct {
+	*mock.Call
+}
+
+// OnFatal is a helper method to define mock.On call
+//   - reporter string
+//   - err error
+//   - timestamp time.Time
+func (_e *UnitTestCallbackCollector_Expecter) OnFatal(reporter interface{}, err interface{}, timestamp interface{}) *UnitTestCallbackCollector_OnFatal_Call {
+	return &UnitTestCallbackCollector_OnFatal_Call{Call: _e.mock.On("OnFatal", reporter, err, timestamp)}
+}
+
+func (_c *UnitTestCallbackCollector_OnFatal_Call) Run(run func(reporter string, err error, timestamp time.Time)) *UnitTestCallbackCollector_OnFatal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 error
+		if args[1] != nil {
+			arg1 = args[1].(error)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_OnFatal_Call) Return() *UnitTestCallbackCollector_OnFatal_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *UnitTestCallbackCollector_OnFatal_Call) RunAndReturn(run func(reporter string, err error, timestamp time.Time)) *UnitTestCallbackCollector_OnFatal_Call {
+	_c.Run(run)
+	return _c
+}

@@ -82,6 +82,12 @@ type schedulerImpl struct {
 	// scheduler queue. Started/stopped with the scheduler; the Redis client and factory that built
 	// it are not retained.
 	notifyConsumer notify.Consumer
+
+	// onFatal is invoked (at most once, guarded by onFatalOnce) when the processing goroutine
+	// hits an unrecoverable fault, instead of terminating the process directly. Defaulted in the
+	// constructor to a log.Fatal wrapper when the caller supplies nothing.
+	onFatal     models.OnFatalCB
+	onFatalOnce sync.Once
 }
 
 // NewWorkflowSchedulerParams init parameters for a workflow scheduler
@@ -102,6 +108,12 @@ type NewWorkflowSchedulerParams struct {
 	// subscribes task-engine feedback with. Neither this factory nor Redis is retained after
 	// construction - the resulting Consumer is.
 	NotifyConsumerFactory NotifyConsumerFactoryCB `validate:"required"`
+	// OnFatal, when set, is invoked (at most once) when the processing goroutine hits an
+	// unrecoverable fault instead of terminating the process. reporter identifies the faulting
+	// thread; err carries the cause (with code position in its chain); timestamp is when it was
+	// detected. When nil, the default logs and calls log.Fatal, preserving prior behavior. The
+	// goroutine exits after the callback runs.
+	OnFatal models.OnFatalCB
 }
 
 /*
@@ -128,6 +140,13 @@ func NewWorkflowScheduler(
 		return nil, goutils.NewBadInputError("workflow scheduler param is invalid", err, true)
 	}
 
+	// Default the fatal-fault callback to the prior behavior (log and terminate the process) when
+	// the caller supplies nothing.
+	onFatal := params.OnFatal
+	if onFatal == nil {
+		onFatal = defaultOnFatal
+	}
+
 	instance := &schedulerImpl{
 		Component: goutils.Component{
 			LogTags: logTags,
@@ -140,6 +159,7 @@ func NewWorkflowScheduler(
 		wg:          &sync.WaitGroup{},
 		persistence: params.Persistence,
 		taskClient:  params.TaskClient,
+		onFatal:     onFatal,
 		ipcName:     "workflow-scheduler",
 	}
 	instance.runCtx, instance.runCtxCancel = context.WithCancel(parentCtx)
@@ -291,4 +311,10 @@ func (s *schedulerImpl) Stop(ctx context.Context) error {
 	s.runCtxCancel()
 	// Wait for all threads to finish
 	return goutils.TimeBoundedWaitGroupWait(ctx, s.wg, time.Second*5)
+}
+
+// reportFatal invokes the parent's OnFatal callback at most once for the lifetime of this
+// scheduler, regardless of how many times a fatal fault is encountered.
+func (s *schedulerImpl) reportFatal(reporter string, err error, timestamp time.Time) {
+	s.onFatalOnce.Do(func() { s.onFatal(reporter, err, timestamp) })
 }
