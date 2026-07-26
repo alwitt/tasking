@@ -93,6 +93,16 @@ func (c WorkflowSchedulerConfig) MaintenanceTimerInt() time.Duration {
 	return time.Second * time.Duration(c.MaintenanceTimerIntSecs)
 }
 
+// WorkflowClientConfig workflow client config. The workflow client's only IPC target is the
+// workflow scheduler's own queue (onto which it pokes Process/Revive/Cancel Workflow events), so
+// unlike TaskClientConfig it carries no per-name retry settings - step retry is a per-step
+// property carried in the workflow spec. Its SchedulerQueue must match the workflow scheduler's
+// SchedulerQueue.
+type WorkflowClientConfig struct {
+	// SchedulerQueue workflow scheduler IPC queue name
+	SchedulerQueue string `mapstructure:"schedulerQueue" json:"schedulerQueue" validate:"required"`
+}
+
 // ======================================================================================
 // Event notification
 

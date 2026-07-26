@@ -260,3 +260,20 @@ func NewWorkflowSchedulerError(
 	}
 	return WorkflowSchedulerError{BaseError: base}
 }
+
+// WorkflowClientError error operating the workflow client: the public workflow submission /
+// user-mutation API (define, revive, cancel) an embedding application uses to drive the workflow
+// engine. Distinct from the workflow engine's internal WorkflowSchedulerError. Wraps the
+// underlying cause (e.g. PersistenceError for a failed row write, IPCMessageQueueError for a lost
+// scheduler poke) as Core, so callers can errors.As to distinguish "row not written" from
+// "written but poke lost". Mirrors TaskClientError for the workflow engine.
+type WorkflowClientError struct{ goutils.BaseError }
+
+// NewWorkflowClientError builds a WorkflowClientError, optionally capturing the call stack.
+func NewWorkflowClientError(message string, core error, getCallStack bool) WorkflowClientError {
+	base := goutils.BaseError{Name: "WorkflowClientError", Message: message, Core: core}
+	if getCallStack {
+		base.Stack = goutils.GetCallStack(1)
+	}
+	return WorkflowClientError{BaseError: base}
+}
