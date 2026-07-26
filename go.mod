@@ -3,7 +3,7 @@ module github.com/alwitt/tasking
 go 1.26.4
 
 require (
-	github.com/alwitt/goutils v0.12.1-rc3
+	github.com/alwitt/goutils v0.12.1
 	github.com/apex/log v1.9.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
