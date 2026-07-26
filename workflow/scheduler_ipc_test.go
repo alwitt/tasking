@@ -188,10 +188,11 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 		assert.Nil(s.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("maintenance NOOP deletes the message", func(t *testing.T) {
+	t.Run("maintenance routes to the sweep and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		mockClient := mockdb.NewClient(t)
+		mockDatabase := mockdb.NewDatabase(t)
 		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
 		s := newDispatchTestScheduler(t, mockClient, ipcReceiver)
 
@@ -202,7 +203,14 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 		ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		// Maintenance is handled (NOOP) successfully, so the message is deleted.
+		// The sweep lists non-terminal workflows; with none to reconcile it is a clean success, so
+		// the message is deleted.
+		mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(mockDatabase))
+		mockDatabase.EXPECT().
+			ListWorkflows(mock.Anything, mock.Anything).
+			Return([]models.Workflow{}, nil)
 		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(s.processOneIPCRequest(utCtx))

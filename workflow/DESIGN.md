@@ -281,6 +281,19 @@ persisted state. Throughout this document, *"a live task exists for a step"* mea
 task in a non-terminal state** — a terminal task from a prior run (e.g. the FAILED task of a
 since-revived step) does **not** count as live and must not block a fresh dispatch.
 
+**Reconciling a step with multiple terminal tasks.** Because revive does not delete the prior
+attempt's task or its link — it only reverts the step to `DEFINED`, and the next dispatch
+*appends* a new link — a re-run step accumulates **multiple** linked tasks, and a later
+lost-feedback reconciliation can find **all of them terminal** (the stale prior-attempt task
+plus the current attempt's). When a reconciler must derive a single outcome from a step's
+tasks (the maintenance sweep's `RUNNING` row synthesizing an Execution Update from the task's
+persisted state), it must key on the **most-recent** task — the current attempt — not an
+arbitrary one; the step↔task lookup therefore returns tasks **most-recent-first** so the
+current attempt is unambiguous. (The stale links are otherwise harmless: they are never
+`live`, so they never block dispatch. Garbage-collecting a step's prior-attempt links on
+revive is a possible future simplification, not a correctness requirement — ordering the
+lookup is sufficient.)
+
 ### Step Execution: the Step Runner and its two registrations
 
 Every workflow step, regardless of its `Type`, runs as a task of the **one** task type

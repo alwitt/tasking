@@ -402,11 +402,10 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	case models.BaseIPCMessage:
 		switch typed.Type {
 		case models.IPCMsgTypeWFMaintenance:
-			// TODO: run the recovery / liveness reconciliation sweep. For now, a logged NOOP so
-			// the maintenance tick is consumed (and deleted below) rather than treated as poison.
-			log.
-				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Debug("Workflow state maintenance sweep not yet implemented; skipping")
+			// Run the Layer 2 recovery / liveness reconciliation sweep over all non-terminal workflows.
+			if err := s.runMaintenanceSweep(ctx); err != nil {
+				return err // fatal: leave buffered for startup replay (delete contract unchanged)
+			}
 
 		default:
 			s.recordAndDropInvalidMessage(

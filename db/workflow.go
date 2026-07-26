@@ -964,14 +964,18 @@ func (c *databaseImpl) GetWorkflowStepAndExecutorTask(
 		return models.WorkflowStep{}, nil, err
 	}
 
-	// Walk the linkage table out to the tasks which worked on this step.
+	// Walk the linkage table out to the tasks which worked on this step. A step is linked to tasks
+	// one-to-many (a revived step re-runs under a fresh task while the prior attempt's task and link
+	// persist), so order most-recent-first: callers that key on a single task (e.g. the maintenance
+	// sweep reconciling a step against its current attempt) get the latest task deterministically.
 	query := c.db.
 		Table("tasks as task").
 		Select("task.*").
 		Joins(
 			"INNER JOIN workflow_step_runner_tasks AS link ON link.task_id = task.id",
 		).
-		Where("link.step_id = ?", stepID)
+		Where("link.step_id = ?", stepID).
+		Order("task.created_at DESC")
 	if activeTask {
 		query = query.Where("task.state in ?", []models.TaskStateENUM{
 			models.TaskStatePending,
