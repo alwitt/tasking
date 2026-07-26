@@ -755,6 +755,60 @@ func TestTaskDeleteTask(t *testing.T) {
 		var notFound goutils.NotFoundError
 		assert.True(errors.As(err, &notFound), "expected NotFoundError, got %T", err)
 	}
+
+	// Case 3: a task linked to a workflow step cannot be deleted directly. It is the workflow's
+	// execution-history store and leaves only with its workflow (see DeleteWorkflow).
+	{
+		// Define a workflow with a single step, and link a task to that step.
+		deadline := time.Now().UTC().Add(time.Hour)
+		spec := sampleWorkflowSpec("unit-test-delete-guard", deadline, map[string][]string{
+			"root": {},
+		})
+		var stepID string
+		assert.Nil(persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				workflow, err := dbClient.DefineNewWorkflow(ctx, spec, "unit-test-creator")
+				if err != nil {
+					return err
+				}
+				steps, err := dbClient.ListWorkflowSteps(ctx, workflow.ID)
+				if err != nil {
+					return err
+				}
+				assert.Len(steps, 1)
+				stepID = steps[0].ID
+				return nil
+			},
+		))
+
+		task := defineTask()
+		assert.Nil(persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				return dbClient.LinkWorkflowStepWithExecutorTask(ctx, stepID, task.ID)
+			},
+		))
+
+		deleteBefore := countDeleteEvents()
+
+		// The direct delete is refused with a ConsistencyError.
+		err := persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				return dbClient.DeleteTask(ctx, task.ID)
+			},
+		)
+		assert.NotNil(err)
+		var consistencyErr goutils.ConsistencyError
+		assert.True(errors.As(err, &consistencyErr), "expected ConsistencyError, got %T", err)
+
+		// The task still exists and no DELETE_TASK event was recorded.
+		assert.Nil(persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				_, err := dbClient.GetTask(ctx, task.ID)
+				return err
+			},
+		))
+		assert.Equal(deleteBefore, countDeleteEvents())
+	}
 }
 
 func TestTaskExecDefineNewTaskExecInstance(t *testing.T) {

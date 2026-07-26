@@ -253,7 +253,11 @@ type Database interface {
 	UpdateTaskDeadline(ctx context.Context, taskID string, deadline time.Time) error
 
 	/*
-		DeleteTask delete task entry
+		DeleteTask delete task entry.
+
+		A task that is linked to a workflow step (via workflow_step_runner_tasks) is the
+		workflow's execution-history store and is refused: it can only be deleted as part of
+		deleting its workflow (see DeleteWorkflow).
 
 			@param ctx context.Context - execution context
 			@param taskID string - task ID
@@ -489,7 +493,12 @@ type Database interface {
 	ListWorkflows(ctx context.Context, filters WorkflowQueryFilter) ([]models.Workflow, error)
 
 	/*
-		DeleteWorkflow delete workflow entry
+		DeleteWorkflow delete a terminal workflow and reap the tasks that executed its steps.
+
+		Only a terminal workflow (COMPLETE / CANCELLED) may be deleted. Deleting it reaps the
+		tasks linked to its steps and their task_executions history (a workflow-owned task never
+		outlives its workflow); this is the privileged path that bypasses the DeleteTask linkage
+		guard.
 
 			@param ctx context.Context - execution context
 			@param workflowID string - workflow ID

@@ -12,8 +12,8 @@ import (
 )
 
 // nonTerminalWorkflowStates are the workflow states the maintenance sweep reconciles: everything
-// except the terminal COMPLETE / CANCELLED. CANCELLING is included - it is non-terminal and its steps
-// must be drained to reach CANCELLED.
+// except the terminal COMPLETE / CANCELLED. CANCELLING is included - it is non-terminal and its
+// steps must be drained to reach CANCELLED.
 var nonTerminalWorkflowStates = []models.WorkflowStateENUM{
 	models.WorkflowStatePending,
 	models.WorkflowStateRunning,
@@ -23,10 +23,10 @@ var nonTerminalWorkflowStates = []models.WorkflowStateENUM{
 }
 
 /*
-mapTaskStateToStepState map a task's PERSISTED state to the step outcome it drives, reporting whether
-the task is terminal. The maintenance sweep reconciles a step against its linked task's persisted
-state (the RUNNING / CANCELLING classifiers), whereas mapTaskEventToStepState maps a task EVENT type
-(the notify fast path); this is the state-keyed sibling.
+mapTaskStateToStepState map a task's PERSISTED state to the step outcome it drives, reporting
+whether the task is terminal. The maintenance sweep reconciles a step against its linked task's
+persisted state (the RUNNING / CANCELLING classifiers), whereas mapTaskEventToStepState maps a task
+EVENT type (the notify fast path); this is the state-keyed sibling.
 
 A live task (PENDING / ACTIVE / CANCELLING) has no resolved outcome yet -> (_, false).
 
@@ -59,10 +59,10 @@ sweep is the only thing that recovers dropped feedback, failed enqueues, and cra
 writes. It trusts no queue message and re-derives everything from persisted state.
 
 It fetches all non-terminal workflows first (one read), then reconciles each in its OWN transaction
-(reconcileWorkflow). A failure reconciling one workflow is logged and skipped so it does not stop the
-others; only a failure of the listing itself is fatal (returned, so the maintenance message replays).
-The list-then-per-workflow-tx shape has a benign TOCTOU window: the sweep is idempotent and runs
-again next interval.
+(reconcileWorkflow). A failure reconciling one workflow is logged and skipped so it does not stop \
+the others; only a failure of the listing itself is fatal (returned, so the maintenance message
+replays). The list-then-per-workflow-tx shape has a benign TOCTOU window: the sweep is idempotent
+and runs again next interval.
 
 	@param ctx context.Context - execution context
 */
@@ -116,19 +116,20 @@ type execUpdatePoke struct {
 }
 
 /*
-reconcileWorkflow reconcile a single non-terminal workflow against its persisted steps + linked tasks
-+ deadline, in ONE transaction (see workflow/DESIGN.md reconciliation table).
+reconcileWorkflow reconcile a single non-terminal workflow against its persisted steps + linked
+tasks + deadline, in ONE transaction (see workflow/DESIGN.md reconciliation table).
 
-Workflow-level short-circuit: a past-deadline workflow is timed out whole (timeOutWorkflowSteps flips
-the workflow + all non-terminal steps to TIMED_OUT and reports the still-RUNNING tasks to cancel),
-and the per-step pass is skipped - every non-terminal step is about to become TIMED_OUT anyway.
+Workflow-level short-circuit: a past-deadline workflow is timed out whole (timeOutWorkflowSteps
+flips the workflow + all non-terminal steps to TIMED_OUT and reports the still-RUNNING tasks to
+cancel), and the per-step pass is skipped - every non-terminal step is about to become TIMED_OUT
+anyway.
 
 Otherwise, per non-terminal step it derives the drive to issue (post-commit): a DEFINED step or a
 PENDING workflow needs one Process Workflow re-drive (collapsed to a single poke); a PENDING step
-needs a Schedule Step re-emit; a RUNNING step is classified against its task (live -> leave; terminal
--> synthesized Execution Update from the task's state; zombie -> synthesized FAILED); a CANCELLING
-step is classified against its task (terminal/missing -> synthesized CANCELLED; live -> re-cancel).
-Finally the workflow aggregate is re-checked (settleWorkflowIfDone) as a backstop.
+needs a Schedule Step re-emit; a RUNNING step is classified against its task (live -> leave;
+terminal -> synthesized Execution Update from the task's state; zombie -> synthesized FAILED); a
+CANCELLING step is classified against its task (terminal/missing -> synthesized CANCELLED; live ->
+re-cancel). Finally the workflow aggregate is re-checked (settleWorkflowIfDone) as a backstop.
 
 State-before-poke (DESIGN Invariant 8): the only in-tx writes are the aggregate re-check
 (settle / timeout, which have no owning handler); every per-step drive is a post-commit poke applied
@@ -339,9 +340,9 @@ func (s *schedulerImpl) classifyRunningStep(
 	}
 
 	// Every linked task is terminal and feedback was lost. A revived-and-re-run step accumulates the
-	// prior attempt's terminal task alongside the current one, so drive the outcome of the MOST RECENT
-	// task - GetWorkflowStepAndExecutorTask orders most-recent-first, so tasks[0] is the current
-	// attempt.
+	// prior attempt's terminal task alongside the current one, so drive the outcome of the MOST
+	// RECENT task - GetWorkflowStepAndExecutorTask orders most-recent-first, so tasks[0] is the
+	// current attempt.
 	newStepState, _ := mapTaskStateToStepState(tasks[0].TaskState)
 	return &execUpdatePoke{stepID: step.ID, newStepState: newStepState}, nil
 }

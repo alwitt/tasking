@@ -636,10 +636,104 @@ func TestWorkflowDelete(t *testing.T) {
 		},
 	))
 
+	// defineTask create a fresh one-shot task and return its ID.
+	defineTask := func(name string) string {
+		var task models.Task
+		assert.Nil(persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				var err error
+				task, err = dbClient.DefineNewOneShotTask(ctx, db.NewTaskParameter{
+					Name:       name,
+					Creator:    "unit-test-creator",
+					RetryParam: models.DefaultTaskRetryParameters(),
+				})
+				return err
+			},
+		))
+		return task.ID
+	}
+
+	// Link a task to each step; give one task a child execution instance so the reap of its
+	// task_executions history can be asserted.
+	taskForStep0 := defineTask("task-for-step-0")
+	taskForStep1 := defineTask("task-for-step-1")
+	var execOfTask0 models.TaskExecution
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			if err := dbClient.LinkWorkflowStepWithExecutorTask(ctx, stepIDs[0], taskForStep0); err != nil {
+				return err
+			}
+			if err := dbClient.LinkWorkflowStepWithExecutorTask(ctx, stepIDs[1], taskForStep1); err != nil {
+				return err
+			}
+			task0, err := dbClient.GetTask(ctx, taskForStep0)
+			if err != nil {
+				return err
+			}
+			execOfTask0, err = dbClient.DefineNewTaskExecInstance(ctx, task0)
+			return err
+		},
+	))
+	assert.NotEmpty(execOfTask0.ID)
+
+	// A non-terminal workflow cannot be deleted: it must be cancelled (or complete) first. The
+	// workflow is still PENDING here, so the delete is refused with a ConsistencyError and
+	// nothing is torn down.
+	{
+		err := persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				return dbClient.DeleteWorkflow(ctx, workflow.ID)
+			},
+		)
+		assert.NotNil(err)
+		var consistencyErr goutils.ConsistencyError
+		assert.ErrorAs(err, &consistencyErr)
+
+		// Nothing was deleted: the workflow, its steps, and its step tasks all still exist.
+		assert.Nil(persistence.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				_, err := dbClient.GetWorkflow(ctx, workflow.ID)
+				assert.Nil(err)
+				steps, err := dbClient.ListWorkflowSteps(ctx, workflow.ID)
+				assert.Nil(err)
+				assert.Len(steps, 2)
+				_, err = dbClient.GetTask(ctx, taskForStep0)
+				assert.Nil(err)
+				return nil
+			},
+		))
+	}
+
+	// Drive the workflow to a terminal state (CANCELLED) so it may be deleted.
+	now := time.Now().UTC()
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			if err := dbClient.MarkWorkflowCancelling(ctx, workflow.ID, now); err != nil {
+				return err
+			}
+			return dbClient.MarkWorkflowCancelled(ctx, workflow.ID, now)
+		},
+	))
+
 	// Delete the workflow.
 	assert.Nil(persistence.UseDatabaseInTransaction(
 		utCtx, func(ctx context.Context, dbClient db.Database) error {
 			return dbClient.DeleteWorkflow(ctx, workflow.ID)
+		},
+	))
+
+	// The step tasks were reaped along with the workflow, and their execution history with them.
+	assert.Nil(persistence.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			for _, taskID := range []string{taskForStep0, taskForStep1} {
+				_, err := dbClient.GetTask(ctx, taskID)
+				var taskNotFound goutils.NotFoundError
+				assert.ErrorAs(err, &taskNotFound, "task %s should be reaped", taskID)
+			}
+			_, err := dbClient.GetTaskExecution(ctx, execOfTask0.ID)
+			var execNotFound goutils.NotFoundError
+			assert.ErrorAs(err, &execNotFound, "task execution history should be reaped")
+			return nil
 		},
 	))
 

@@ -402,19 +402,95 @@ func (c *databaseImpl) ListWorkflows(
 	return result, nil
 }
 
+// isTerminalWorkflowState reports whether a workflow state admits no further transition,
+// i.e. COMPLETE or CANCELLED (see models.Workflow.ValidNextState).
+func isTerminalWorkflowState(state models.WorkflowStateENUM) bool {
+	return state == models.WorkflowStateComplete || state == models.WorkflowStateCancelled
+}
+
 /*
-DeleteWorkflow delete workflow entry
+DeleteWorkflow delete a workflow and reap the tasks that executed its steps.
+
+A workflow-owned task is the workflow's execution-history store, so a task never outlives its
+workflow (see the workflow DESIGN's "Failure history and its retention"). This is the
+privileged teardown path that deletes those tasks directly, bypassing the DeleteTask linkage
+guard.
+
+Only a terminal workflow (COMPLETE / CANCELLED) may be deleted — a non-terminal workflow must
+be cancelled first, which guarantees no step task is still in-flight when it is reaped.
+
+The reap is capture-then-cascade: the step -> task pointers live in workflow_step_runner_tasks,
+whose rows cascade away when EITHER the step or the task is deleted. So the linked task IDs are
+read BEFORE any delete; then the tasks are deleted (cascading their task_executions history and
+the link rows), and finally the workflow is deleted (cascading its steps and dependency edges).
+The caller runs this inside a single transaction (UseDatabaseInTransaction).
 
 	@param ctx context.Context - execution context
 	@param workflowID string - workflow ID
 */
 func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) error {
-	// Fetch the workflow first to capture its details for the audit record
+	// Fetch the workflow first to capture its details for the audit record and to gate on state
 	entry, err := c.getWorkflowDBEntry(workflowID)
 	if err != nil {
 		return err
 	}
 
+	// Terminal gate: a live workflow may still have in-flight step tasks and racing scheduler
+	// activity; require it be cancelled (or complete) before teardown.
+	if !isTerminalWorkflowState(entry.State) {
+		return goutils.NewConsistencyError(
+			fmt.Sprintf(
+				"workflow %s in state %s is not terminal; cancel it before deleting",
+				workflowID, entry.State,
+			), nil, true,
+		)
+	}
+
+	// Capture the workflow's steps, then the tasks linked to those steps — BEFORE any delete,
+	// since deleting the workflow (or its steps) cascades away the link rows that are the only
+	// pointers from steps to tasks.
+	steps, err := c.ListWorkflowSteps(ctx, workflowID)
+	if err != nil {
+		return err
+	}
+	if len(steps) > 0 {
+		stepIDs := make([]string, 0, len(steps))
+		for _, step := range steps {
+			stepIDs = append(stepIDs, step.ID)
+		}
+
+		var linkEntries []workflowStepRunnerTask
+		if tmp := c.db.
+			Model(&workflowStepRunnerTask{}).
+			Where("step_id in ?", stepIDs).
+			Find(&linkEntries); tmp.Error != nil {
+			return models.NewSQLError(
+				fmt.Sprintf("failed to list task links of workflow %s steps", workflowID),
+				tmp.Error, true,
+			)
+		}
+
+		taskIDSet := map[string]bool{}
+		for _, link := range linkEntries {
+			taskIDSet[link.TaskID] = true
+		}
+		if len(taskIDSet) > 0 {
+			taskIDs := make([]string, 0, len(taskIDSet))
+			for taskID := range taskIDSet {
+				taskIDs = append(taskIDs, taskID)
+			}
+			// Reap the step tasks. This cascades their task_executions (history) and the
+			// workflow_step_runner_tasks link rows via the task-side FK cascade.
+			if tmp := c.db.Where("id in ?", taskIDs).Delete(&taskEntry{}); tmp.Error != nil {
+				return models.NewSQLError(
+					fmt.Sprintf("failed to reap tasks of workflow %s", workflowID), tmp.Error, true,
+				)
+			}
+		}
+	}
+
+	// Delete the workflow. This cascades its steps, their dependency edges, and any remaining
+	// link rows via the step-side FK cascade.
 	tmp := c.db.Where("id = ?", workflowID).Delete(&workflowEntry{})
 	if tmp.Error != nil {
 		return models.NewSQLError(

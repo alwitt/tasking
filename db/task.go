@@ -357,6 +357,28 @@ func (c *databaseImpl) DeleteTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
+	// Refuse to delete a task that is executing a workflow step. Such a task is the
+	// workflow's execution-history store, so it must leave only WITH its workflow (see the
+	// workflow DESIGN's "Failure history and its retention"). The privileged workflow-teardown
+	// path (DeleteWorkflow) reaps these tasks directly, bypassing this guard.
+	var linkCount int64
+	if tmp := c.db.
+		Model(&workflowStepRunnerTask{}).
+		Where("task_id = ?", taskID).
+		Count(&linkCount); tmp.Error != nil {
+		return models.NewSQLError(
+			fmt.Sprintf("failed to check workflow-step linkage of task %s", taskID), tmp.Error, true,
+		)
+	}
+	if linkCount > 0 {
+		return goutils.NewConsistencyError(
+			fmt.Sprintf(
+				"task %s is linked to a workflow step and cannot be deleted directly; "+
+					"delete its workflow instead", taskID,
+			), nil, true,
+		)
+	}
+
 	tmp := c.db.Where("id = ?", entry.ID).Delete(&taskEntry{})
 	if tmp.Error != nil {
 		return models.NewSQLError(
