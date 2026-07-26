@@ -196,21 +196,25 @@ from the instance's `Deadline`, so a processor that ignores its context is still
 
 ## 6. The Scheduler in detail
 
-The scheduler is the only component that mutates state. It is built on a
-`goutils.TaskProcessor` — a single-consumer worker with a **type-keyed dispatch map**. Nine
-`schedulerWorkReq*` types each map to one `process*` handler.
+The scheduler is the only component that mutates state. It is a **single serial consumer**: one
+support goroutine (`processQueue`) dequeues an event off its dedicated reliable IPC queue, parses
+it, and runs the associated `process*` handler **inline** on that goroutine. There is no separate
+worker — every event, including maintenance, is processed one at a time on this single path, so
+request buffering lives in the IPC queue rather than a second in-process channel.
 
-### 6.1 Two entry paths into the handlers, deliberately not unified
+### 6.1 Two producers, one serial handler path
 
-- **The IPC path** (`processQueue` → `processOneIPCRequest`): runs on its own goroutine,
-  reads the scheduler queue, and **`Submit`s** typed work-requests to the worker. It never
-  calls a handler inline — the worker's event loop is a separate consumer.
-- **The maintenance path** (`performMaintenance`): runs **on** the worker (it was itself
-  submitted as a `schedulerWorkReqRunMaintenance`), so it calls the `process*` handlers
-  **directly**.
+- **The IPC path** (`processQueue` → `processOneIPCRequest`): reads the scheduler queue, parses each
+  message, and calls the matching `process*` handler **directly**. A handler that returns nil means
+  the message is done and is deleted from the buffer; a fatal error leaves it buffered for startup
+  replay; a poison message is audited and dropped.
+- **The maintenance path** (`performMaintenance`): re-scans the DB and calls the same `process*`
+  handlers directly. It does **not** run on a separate thread — the maintenance interval timer
+  self-enqueues an `IPC_TASK_ENG_MAINTENANCE` message onto the scheduler's own queue, so the sweep
+  is dequeued and run by `processQueue` in the exact same serial path as every other event.
 
-These must stay separate: submitting from within the worker would deadlock or reorder; the
-code comments call this out explicitly.
+Because everything runs on the one `processQueue` goroutine, no two handlers ever execute
+concurrently and there is no in-process ordering to reconcile.
 
 ### 6.2 Handlers are idempotent
 
@@ -222,7 +226,10 @@ surfaces as a consistency error via the subsequent `ValidNextState` check.
 
 ### 6.3 The maintenance timer is the universal backstop
 
-`performMaintenance` re-scans the DB for every state a lost poke could strand:
+The maintenance interval timer does not invoke maintenance directly — it enqueues an
+`IPC_TASK_ENG_MAINTENANCE` message onto the scheduler queue, so the sweep rides the same serial
+`processQueue` path as every other event. `performMaintenance` re-scans the DB for every state a
+lost poke could strand:
 
 1. **PENDING / CANCELLING tasks** — schedule or cancel them.
 2. **ACTIVE tasks past their deadline** — time them out.
@@ -274,10 +281,28 @@ crash/replay loop.
 
 ### 7.3 Fatal vs. recoverable errors
 
-Only a `models.SQLError` (the database or its connection is broken) is **fatal** — it stops
-the worker via `log.Fatal`, because no per-request recovery is meaningful when the DB is down.
-Everything else is handled per request: drop the message, report the failure to the scheduler,
-and continue.
+Only a `models.SQLError` (the database or its connection is broken) is **fatal** — the consumer
+goroutine stops via `log.Fatal`, because no per-request recovery is meaningful when the DB is down
+and every message would fail identically (so this is not a per-message loop). Both consumers use the
+same `isFatalDBError` (`errors.As` for `SQLError`, which is found through the wrapped error chain)
+to make this call.
+
+For the **scheduler** the split is expressed as two independent decisions in `processOneIPCRequest`
+and `processQueue`:
+
+- **Delete keys off *completion*, not success.** The reliable-queue buffer guards against exactly
+  one thing — an application crash/panic mid-handling, where the handler never returns. So once a
+  handler *returns* (nil **or** error), the message is deleted from the buffer. Only a crash leaves
+  a message for `recoverBufferedMessages` to replay. A returned error never strands a message, so a
+  deterministically-failing handler cannot become a replay crash-loop.
+- **The error class decides only stop-vs-continue.** After the delete, `processOneIPCRequest`
+  returns the handler error and `processQueue` classifies it: a `models.SQLError` is fatal
+  (`log.Fatal`); anything else is logged and processing continues. The maintenance sweep re-drives
+  the stranded work from the DB (the source of truth), so a single failing message never wedges the
+  scheduler.
+
+For the **receiver**, the equivalent recoverable handling drops the message, reports the failure to
+the scheduler, and continues.
 
 ## 8. Engine failure vs. execution failure
 

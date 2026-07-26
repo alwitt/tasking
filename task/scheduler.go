@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -42,15 +41,19 @@ type schedulerImpl struct {
 
 	persistence db.Client
 
-	wg              *sync.WaitGroup
-	worker          goutils.TaskProcessor
-	workerCtx       context.Context
-	workerCtxCancel context.CancelFunc
+	wg           *sync.WaitGroup
+	runCtx       context.Context
+	runCtxCancel context.CancelFunc
 
 	maintenanceTimer goutils.IntervalTimer
 
-	ipcName        string
-	ipcReceiver    common.IPCMessageReceive
+	ipcName     string
+	ipcReceiver common.IPCMessageReceive
+	// ipcSender enqueues onto the SAME scheduler queue as ipcReceiver - used by the maintenance
+	// timer to post Task Maintenance ticks so maintenance rides the same serial path as every event.
+	ipcSender common.IPCMessageSend
+	// taskIPcSenders per-task execution-queue senders the handlers dispatch execution requests
+	// through, keyed by task name (distinct from ipcSender, which targets the scheduler's own queue).
 	taskIPcSenders map[string]common.IPCMessageSend
 }
 
@@ -106,237 +109,14 @@ func NewScheduler(
 		ipcName:        "scheduler",
 		taskIPcSenders: map[string]common.IPCMessageSend{},
 	}
-	instance.workerCtx, instance.workerCtxCancel = context.WithCancel(parentCtx)
-
-	// ------------------------------------------------------------------------------------
-	// Prepare IPC message processing worker
-
-	var err error
-	instance.worker, err = goutils.GetNewTaskProcessorInstance(
-		instance.workerCtx, "schedule-request-processor", 10, log.Fields{
-			"package":       "tasking",
-			"module":        "task",
-			"component":     "task-scheduler",
-			"sub-component": "request-processor",
-		}, nil,
-	)
-	if err != nil {
-		return nil, models.NewTaskSchedulerError(
-			"failed to define core scheduling request processor", err, true,
-		)
-	}
-
-	// ------------------------------------------------------------------------------------
-	// Install worker functions
-
-	// New pending task needing scheduling
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqNewPendingTask{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqNewPendingTask)
-			if ok {
-				return instance.processNewPendingTask(instance.workerCtx, newRequest.TaskID)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqNewPendingTask{}),
-			), err, true,
-		)
-	}
-
-	// task being cancelled
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqCancelTask{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqCancelTask)
-			if ok {
-				return instance.processCancelTask(
-					instance.workerCtx, newRequest.TaskID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqCancelTask{}),
-			), err, true,
-		)
-	}
-
-	// task timed out
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskTimedOut{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskTimedOut)
-			if ok {
-				return instance.processTaskTimeout(
-					instance.workerCtx, newRequest.TaskID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskTimedOut{}),
-			), err, true,
-		)
-	}
-
-	// task execution scheduled to start
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskExecutionStarting{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionStarting)
-			if ok {
-				return instance.processTaskExecutionStarting(
-					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskExecutionStarting{}),
-			), err, true,
-		)
-	}
-
-	// task execution completed
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskExecutionComplete{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionComplete)
-			if ok {
-				return instance.processTaskExecutionComplete(
-					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskExecutionComplete{}),
-			), err, true,
-		)
-	}
-
-	// task execution failed
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskExecutionFailed{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionFailed)
-			if ok {
-				return instance.processTaskExecutionFailed(
-					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskExecutionFailed{}),
-			), err, true,
-		)
-	}
-
-	// task execution engine failure
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskExecutionEngineFailed{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionEngineFailed)
-			if ok {
-				return instance.processTaskExecutionEngineFailed(
-					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskExecutionEngineFailed{}),
-			), err, true,
-		)
-	}
-
-	// task execution timed out
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqTaskExecutionTimedOut{}),
-		func(taskParam interface{}) error {
-			newRequest, ok := taskParam.(schedulerWorkReqTaskExecutionTimedOut)
-			if ok {
-				return instance.processTaskExecutionTimedOut(
-					instance.workerCtx, newRequest.InstanceID, newRequest.Timestamp,
-				)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqTaskExecutionTimedOut{}),
-			), err, true,
-		)
-	}
-
-	// Periodic maintenance
-	if err := instance.worker.AddToTaskExecutionMap(
-		reflect.TypeOf(schedulerWorkReqRunMaintenance{}),
-		func(taskParam interface{}) error {
-			_, ok := taskParam.(schedulerWorkReqRunMaintenance)
-			if ok {
-				return instance.performMaintenance(instance.workerCtx)
-			}
-			return goutils.NewConsistencyError(fmt.Sprintf(
-				"received unexpected call parameters: %s", reflect.TypeOf(taskParam),
-			), nil, true)
-		},
-	); err != nil {
-		return nil, models.NewTaskSchedulerError(
-			fmt.Sprintf(
-				"failed to register '%s' handler with worker",
-				reflect.TypeOf(schedulerWorkReqRunMaintenance{}),
-			), err, true,
-		)
-	}
+	instance.runCtx, instance.runCtxCancel = context.WithCancel(parentCtx)
 
 	// ------------------------------------------------------------------------------------
 	// Prepare periodic maintenance timer
 
+	var err error
 	instance.maintenanceTimer, err = goutils.GetIntervalTimerInstance(
-		instance.workerCtx, instance.wg, log.Fields{
+		instance.runCtx, instance.wg, log.Fields{
 			"module": "task", "component": "task-scheduler", "sub-component": "maintenance-timer",
 		},
 	)
@@ -350,25 +130,36 @@ func NewScheduler(
 	// Prepare IPC message queue handles
 
 	// Define the scheduler queue receiver
-	{
-		receiver, err := params.IPCReceiverFactory(
-			instance.workerCtx, params.Config.SchedulerQueue, params.Redis, instance.ipcName,
+	instance.ipcReceiver, err = params.IPCReceiverFactory(
+		instance.runCtx, params.Config.SchedulerQueue, params.Redis, instance.ipcName,
+	)
+	if err != nil {
+		return nil, models.NewTaskSchedulerError(
+			fmt.Sprintf(
+				"failed to initialize scheduler queue receiver for queue '%s'",
+				params.Config.SchedulerQueue,
+			), err, true,
 		)
-		if err != nil {
-			return nil, models.NewTaskSchedulerError(
-				fmt.Sprintf(
-					"failed to initialize scheduler queue receiver for queue '%s'",
-					params.Config.SchedulerQueue,
-				), err, true,
-			)
-		}
-		instance.ipcReceiver = receiver
+	}
+
+	// Define the scheduler queue sender - the same queue as the receiver, so the maintenance timer
+	// can enqueue its own Task Maintenance ticks onto the serial processing path.
+	instance.ipcSender, err = params.IPCSenderFactory(
+		instance.runCtx, params.Config.SchedulerQueue, params.Redis, instance.ipcName,
+	)
+	if err != nil {
+		return nil, models.NewTaskSchedulerError(
+			fmt.Sprintf(
+				"failed to initialize scheduler queue sender for queue '%s'",
+				params.Config.SchedulerQueue,
+			), err, true,
+		)
 	}
 
 	// Define the task queue senders
 	for _, oneQueue := range params.Config.TaskMappings {
 		sender, err := params.IPCSenderFactory(
-			instance.workerCtx, oneQueue.ExecutionQueue, params.Redis, instance.ipcName,
+			instance.runCtx, oneQueue.ExecutionQueue, params.Redis, instance.ipcName,
 		)
 		if err != nil {
 			return nil, models.NewTaskSchedulerError(
@@ -391,20 +182,19 @@ Start the scheduler processing units
 func (s *schedulerImpl) Start(_ context.Context) error {
 	// Recover any messages left in the queue buffer by a previous run before we begin
 	// consuming the main queue. Must happen before processQueue starts.
-	if err := s.recoverBufferedMessages(s.workerCtx); err != nil {
+	if err := s.recoverBufferedMessages(s.runCtx); err != nil {
 		return models.NewTaskSchedulerError("failed to recover buffered queue messages", err, true)
 	}
 
-	// Start the worker
-	if err := s.worker.StartEventLoop(s.wg); err != nil {
-		return models.NewTaskSchedulerError("failed to start worker", err, true)
-	}
-
-	// Start maintenance timer
+	// Start maintenance timer. On each tick it enqueues a Task Maintenance message onto the
+	// scheduler queue rather than invoking maintenance directly, so the single processQueue loop
+	// runs maintenance in the same serial path as every other event.
 	if err := s.maintenanceTimer.Start(s.config.MaintenanceTimerInt(), func() error {
-		if err := s.worker.Submit(s.workerCtx, schedulerWorkReqRunMaintenance{}); err != nil {
+		if err := s.ipcSender.EnqueueMessage(
+			s.runCtx, models.PrepareIPCMsgTaskMaintenance(s.ipcName, time.Now()),
+		); err != nil {
 			return models.NewTaskSchedulerError(
-				"failed to submit new maintenance request", err, true,
+				"failed to enqueue task maintenance message", err, true,
 			)
 		}
 		return nil
@@ -429,7 +219,6 @@ Stop the task scheduler processing units
 */
 func (s *schedulerImpl) Stop(ctx context.Context) error {
 	logTags := s.GetLogTagsForContext(ctx)
-	s.workerCtxCancel()
 
 	// Stop the maintenance timer
 	if err := s.maintenanceTimer.Stop(); err != nil {
@@ -439,14 +228,7 @@ func (s *schedulerImpl) Stop(ctx context.Context) error {
 			Error("Failed to stop maintenance timer")
 	}
 
-	// Stop the worker
-	if err := s.worker.StopEventLoop(); err != nil {
-		log.
-			WithError(err).
-			WithFields(goutils.UpdateCodePositionInTags(logTags)).
-			Error("Failed to stop processing worker")
-	}
-
+	s.runCtxCancel()
 	// Wait for all threads to finish
 	return goutils.TimeBoundedWaitGroupWait(ctx, s.wg, time.Second*5)
 }

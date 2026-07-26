@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	mockgoutils "github.com/alwitt/goutils/mocks/goutils"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
 	"github.com/alwitt/tasking/models"
@@ -344,6 +343,31 @@ func TestRecoverBufferedMessages(t *testing.T) {
 		assert.Nil(s.recoverBufferedMessages(utCtx))
 	})
 
+	t.Run("maintenance message is re-enqueued onto the main queue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mockClient := mockdb.NewClient(t)
+		ipcReceiver := mockcommon.NewIPCMessageReceive(t)
+		s := newRecoverTestScheduler(t, mockClient, ipcReceiver)
+
+		// A self-enqueued Task Maintenance tick left in the buffer parses as a BaseIPCMessage; it
+		// is a valid replayable message (transient but idempotent) that must go back onto the main
+		// queue rather than being recorded as poison.
+		maintenance := models.PrepareIPCMsgTaskMaintenance("unit-test", time.Now().UTC())
+
+		ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(maintenance, nil).
+			Once()
+		ipcReceiver.EXPECT().
+			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
+			Return(nil, nil).
+			Once()
+		ipcReceiver.EXPECT().ReEnqueueOnMainQueue(mock.Anything, maintenance).Return(nil).Once()
+
+		assert.Nil(s.recoverBufferedMessages(utCtx))
+	})
+
 	t.Run("re-enqueue error is fatal", func(t *testing.T) {
 		assert := assert.New(t)
 
@@ -425,37 +449,50 @@ func assertSchedulerError(t *testing.T, err error) {
 // ipcRequestTestScheduler bundles the scheduler under test with the mocks
 // processOneIPCRequest drives.
 type ipcRequestTestScheduler struct {
-	scheduler   *schedulerImpl
-	ipcReceiver *mockcommon.IPCMessageReceive
-	worker      *mockgoutils.TaskProcessor
-	mockClient  *mockdb.Client
+	scheduler    *schedulerImpl
+	ipcReceiver  *mockcommon.IPCMessageReceive
+	mockClient   *mockdb.Client
+	mockDatabase *mockdb.Database
 }
 
-// newIPCRequestTestScheduler build a white-box schedulerImpl for processOneIPCRequest:
-// a registered validator (ParseIPCMessage needs it), the buffer receiver mock, and a
-// mock worker standing in for the TaskProcessor requests are submitted to.
+// newIPCRequestTestScheduler build a white-box schedulerImpl for processOneIPCRequest: a
+// registered validator (ParseIPCMessage needs it), the buffer receiver mock, and the persistence
+// mocks the handlers run against. The handlers are dispatched INLINE (there is no worker), so each
+// dispatch subtest drives its handler's benign idempotency no-op through the DB mock, which proves
+// parse + routing while keeping the mocking minimal.
 func newIPCRequestTestScheduler(t *testing.T) ipcRequestTestScheduler {
 	validate := validator.New()
 	require.NoError(t, models.RegisterWithValidator(validate))
 
 	mockClient := mockdb.NewClient(t)
+	mockDatabase := mockdb.NewDatabase(t)
 	ipcReceiver := mockcommon.NewIPCMessageReceive(t)
-	worker := mockgoutils.NewTaskProcessor(t)
 
 	s := newProcessTestScheduler(mockClient, nil)
 	s.validator = validate
 	s.ipcReceiver = ipcReceiver
-	s.worker = worker
 
 	return ipcRequestTestScheduler{
-		scheduler: s, ipcReceiver: ipcReceiver, worker: worker, mockClient: mockClient,
+		scheduler: s, ipcReceiver: ipcReceiver, mockClient: mockClient, mockDatabase: mockDatabase,
 	}
 }
 
-// TestProcessOneIPCRequest covers the live IPC processing path and its explicit
-// buffer-delete contract: dequeue errors are fatal, poison messages are recorded and
-// dropped, valid messages are submitted to the worker and then deleted, and a Submit
-// failure leaves the message buffered (no delete) for startup recovery to replay.
+// expectTx wires the handler's UseDatabaseInTransaction call to run against the mock Database.
+func (h ipcRequestTestScheduler) expectTx() {
+	h.mockClient.EXPECT().
+		UseDatabaseInTransaction(mock.Anything, mock.Anything).
+		RunAndReturn(runTxAgainst(h.mockDatabase))
+}
+
+// TestProcessOneIPCRequest covers the live IPC processing path and its delete contract: dequeue
+// read errors are fatal (no message to delete), poison messages are recorded and dropped, and a
+// valid message is handled INLINE and then deleted once the handler *completes* - on success AND on
+// failure alike, since only a crash (never a returned error) may strand a message for replay. A
+// handler error is returned for the caller to classify (fatal SQLError vs. log-and-continue) but
+// never changes the delete. A delete failure after a handled message is swallowed. Each dispatch
+// subtest drives its handler's benign idempotency no-op through the DB mock, which proves parse +
+// routing while keeping the mocking minimal (the full handler behavior lives in each handler's own
+// test file).
 func TestProcessOneIPCRequest(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 
@@ -479,7 +516,7 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
-		// nil message: nothing to process, nothing to submit or delete.
+		// nil message: nothing to process, nothing to handle or delete.
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(nil, nil)
@@ -491,19 +528,16 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
-		mockDatabase := mockdb.NewDatabase(t)
 		msg := unreadableBufferEnvelope{err: simErr}
 
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.mockClient.EXPECT().
-			UseDatabaseInTransaction(mock.Anything, mock.Anything).
-			RunAndReturn(runTxAgainst(mockDatabase))
-		mockDatabase.EXPECT().
+		h.expectTx()
+		h.mockDatabase.EXPECT().
 			RecordInvalidTaskIPCMessage(mock.Anything, "scheduler", "", "unreadable payload").
 			Return(nil)
-		// Poison drop deletes the buffered message; no submit.
+		// Poison drop deletes the buffered message; no handler runs.
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
@@ -513,16 +547,13 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
-		mockDatabase := mockdb.NewDatabase(t)
 		msg := fixedEnvelope{payload: "not json"}
 
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.mockClient.EXPECT().
-			UseDatabaseInTransaction(mock.Anything, mock.Anything).
-			RunAndReturn(runTxAgainst(mockDatabase))
-		mockDatabase.EXPECT().
+		h.expectTx()
+		h.mockDatabase.EXPECT().
 			RecordInvalidTaskIPCMessage(mock.Anything, "scheduler", "not json", "unparsable message").
 			Return(nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
@@ -534,7 +565,6 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
-		mockDatabase := mockdb.NewDatabase(t)
 
 		// PENDING_INSTANCE parses as IPCMessageExecuteInstance but is not one of the
 		// execute-instance types the scheduler handles on its receive queue.
@@ -547,10 +577,8 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(pending, nil)
-		h.mockClient.EXPECT().
-			UseDatabaseInTransaction(mock.Anything, mock.Anything).
-			RunAndReturn(runTxAgainst(mockDatabase))
-		mockDatabase.EXPECT().
+		h.expectTx()
+		h.mockDatabase.EXPECT().
 			RecordInvalidTaskIPCMessage(
 				mock.Anything, "scheduler", payload,
 				fmt.Sprintf(
@@ -563,7 +591,7 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("new-task message is submitted then deleted", func(t *testing.T) {
+	t.Run("new-task routes to the handler and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
@@ -573,43 +601,43 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		// The parsed task ID is submitted as a new-pending-task work request.
-		h.worker.EXPECT().
-			Submit(mock.Anything, schedulerWorkReqNewPendingTask{TaskID: taskID}).
-			Return(nil)
-		// Submitted successfully => delete from the buffer.
+		// A task no longer PENDING makes new-pending-task a benign NOOP: the handler returns nil
+		// and the dispatch loop deletes the message. This confirms parse + routing.
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID, TaskState: models.TaskStateActive}, nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("cancel-task message is submitted then deleted", func(t *testing.T) {
+	t.Run("cancel-task routes to the handler and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
 		taskID := ulid.Make().String()
-		ts := time.Now().UTC()
-		msg := models.PrepareIPCMsgCancelTask("unit-test", taskID, ts)
+		msg := models.PrepareIPCMsgCancelTask("unit-test", taskID, time.Now().UTC())
 
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.worker.EXPECT().
-			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
-				cancel, ok := req.(schedulerWorkReqCancelTask)
-				return ok && cancel.TaskID == taskID
-			})).
-			Return(nil)
+		// An already-COMPLETE task makes cancel a benign NOOP.
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID, TaskState: models.TaskStateComplete}, nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("execution-succeeded message is submitted then deleted", func(t *testing.T) {
+	t.Run("execution-succeeded routes to the handler and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
 		instanceID := ulid.Make().String()
+		taskID := ulid.Make().String()
 		msg := models.PrepareIPCMsgTaskExecutionProcessSucceeded(
 			"unit-test", instanceID, time.Now().UTC(),
 		)
@@ -617,22 +645,28 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.worker.EXPECT().
-			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
-				complete, ok := req.(schedulerWorkReqTaskExecutionComplete)
-				return ok && complete.InstanceID == instanceID
-			})).
-			Return(nil)
+		// An instance already at/past FINALIZED makes completion a benign NOOP; the handler
+		// fetches instance + parent task, hits the idempotency guard, and returns nil.
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTaskExecution(mock.Anything, instanceID).
+			Return(models.TaskExecution{
+				ID: instanceID, TaskID: taskID, ExecutionState: models.TaskExecutionStateFinalized,
+			}, nil)
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID}, nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("execution-failed message is submitted then deleted", func(t *testing.T) {
+	t.Run("execution-failed routes to the handler and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
 		instanceID := ulid.Make().String()
+		taskID := ulid.Make().String()
 		msg := models.PrepareIPCMsgTaskExecutionProcessFailed(
 			"unit-test", instanceID, nil, time.Now().UTC(),
 		)
@@ -640,22 +674,26 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.worker.EXPECT().
-			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
-				failed, ok := req.(schedulerWorkReqTaskExecutionFailed)
-				return ok && failed.InstanceID == instanceID
-			})).
-			Return(nil)
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTaskExecution(mock.Anything, instanceID).
+			Return(models.TaskExecution{
+				ID: instanceID, TaskID: taskID, ExecutionState: models.TaskExecutionStateFinalized,
+			}, nil)
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID}, nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("engine-failed message is submitted then deleted", func(t *testing.T) {
+	t.Run("engine-failed routes to the handler and deletes on success", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
 		instanceID := ulid.Make().String()
+		taskID := ulid.Make().String()
 		msg := models.PrepareIPCMsgTaskExecutionEngineFailed(
 			"unit-test", instanceID, time.Now().UTC(),
 		)
@@ -663,20 +701,48 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		// An engine-failure report is submitted as an engine-failed work request. Before
-		// support was added it fell into the unsupported-type branch and was dropped.
-		h.worker.EXPECT().
-			Submit(mock.Anything, mock.MatchedBy(func(req interface{}) bool {
-				engineFailed, ok := req.(schedulerWorkReqTaskExecutionEngineFailed)
-				return ok && engineFailed.InstanceID == instanceID
-			})).
-			Return(nil)
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTaskExecution(mock.Anything, instanceID).
+			Return(models.TaskExecution{
+				ID: instanceID, TaskID: taskID, ExecutionState: models.TaskExecutionStateFinalized,
+			}, nil)
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID}, nil)
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
 	})
 
-	t.Run("submit failure leaves the message buffered (not deleted)", func(t *testing.T) {
+	t.Run("maintenance routes to the sweep and deletes on success", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newIPCRequestTestScheduler(t)
+		msg := models.PrepareIPCMsgTaskMaintenance("unit-test", time.Now().UTC())
+
+		h.ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// performMaintenance runs a series of list-and-reconcile passes; with nothing to process in
+		// any pass it is a clean success, so the message is deleted. The first pass lists pending /
+		// cancelling tasks; the remaining passes list executions. Returning empty slices for each
+		// short-circuits every pass.
+		h.mockClient.EXPECT().
+			UseDatabaseInTransaction(mock.Anything, mock.Anything).
+			RunAndReturn(runTxAgainst(h.mockDatabase))
+		h.mockDatabase.EXPECT().
+			ListTasks(mock.Anything, mock.Anything).
+			Return([]models.Task{}, nil)
+		h.mockDatabase.EXPECT().
+			ListAllExecutions(mock.Anything, mock.Anything).
+			Return([]models.TaskExecution{}, nil)
+		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))
+	})
+
+	t.Run("non-fatal handler error still deletes the message and returns the error", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
@@ -686,19 +752,25 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		// Submit fails (only happens on shutdown): the error propagates and the message
-		// is NOT deleted, so startup recovery can replay it. No DeleteBufferedMessage
-		// expectation is set, so the strict mock fails if the code deletes it anyway.
-		h.worker.EXPECT().
-			Submit(mock.Anything, schedulerWorkReqNewPendingTask{TaskID: taskID}).
-			Return(simErr)
+		// The handler fails with a non-DB error (a plain simErr, not a models.SQLError). The
+		// handler nonetheless *completed*, so the message IS deleted (only a crash strands a
+		// message). The error is returned for the caller to classify - and it is NOT fatal, so
+		// processQueue would log and continue; the maintenance sweep re-drives the work. This is
+		// the key regression guard: a failing handler must not leave a message to be replayed.
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{}, simErr)
+		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		err := h.scheduler.processOneIPCRequest(utCtx)
 		assert.NotNil(err)
 		assertSchedulerError(t, err)
+		// Non-fatal: processQueue would continue rather than log.Fatal.
+		assert.False(isFatalDBError(err))
 	})
 
-	t.Run("a buffer delete failure after a successful submit is swallowed", func(t *testing.T) {
+	t.Run("fatal SQLError handler error still deletes the message and returns a fatal error", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newIPCRequestTestScheduler(t)
@@ -708,11 +780,40 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.ipcReceiver.EXPECT().
 			DequeueMessage(mock.Anything, true, mock.Anything).
 			Return(msg, nil)
-		h.worker.EXPECT().
-			Submit(mock.Anything, schedulerWorkReqNewPendingTask{TaskID: taskID}).
-			Return(nil)
-		// The message was submitted; a delete failure is best-effort and must not
-		// turn a handled message into a fatal error.
+		// The handler fails because the database is broken (models.SQLError). The message is still
+		// deleted (the handler completed - the DB fault will recur on every message, this is not a
+		// per-message replay loop), and the returned error is classified fatal so processQueue
+		// stops. This confirms the delete is unconditional while the error class still surfaces.
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{}, models.NewSQLError("database is down", simErr, true))
+		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
+
+		err := h.scheduler.processOneIPCRequest(utCtx)
+		assert.NotNil(err)
+		assertSchedulerError(t, err)
+		// Fatal: processQueue would log.Fatal on this class.
+		assert.True(isFatalDBError(err))
+	})
+
+	t.Run("a buffer delete failure after a handled message is swallowed", func(t *testing.T) {
+		assert := assert.New(t)
+
+		h := newIPCRequestTestScheduler(t)
+		taskID := ulid.Make().String()
+		msg := models.PrepareIPCMsgNewPendingTask("unit-test", taskID, time.Now().UTC())
+
+		h.ipcReceiver.EXPECT().
+			DequeueMessage(mock.Anything, true, mock.Anything).
+			Return(msg, nil)
+		// Handler is a benign NOOP (task no longer PENDING).
+		h.expectTx()
+		h.mockDatabase.EXPECT().
+			GetTask(mock.Anything, taskID).
+			Return(models.Task{ID: taskID, TaskState: models.TaskStateActive}, nil)
+		// The message was handled; a delete failure is best-effort and must not turn a handled
+		// message into a fatal error.
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(simErr)
 
 		assert.Nil(h.scheduler.processOneIPCRequest(utCtx))

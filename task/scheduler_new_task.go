@@ -11,11 +11,6 @@ import (
 	"github.com/apex/log"
 )
 
-// schedulerWorkReqNewPendingTask [worker request] new pending task
-type schedulerWorkReqNewPendingTask struct {
-	TaskID string
-}
-
 /*
 processNewPendingTask process a new pending task needing scheduling
 

@@ -11,12 +11,6 @@ import (
 	"github.com/apex/log"
 )
 
-// schedulerWorkReqCancelTask [worker request] cancel task
-type schedulerWorkReqCancelTask struct {
-	TaskID    string
-	Timestamp time.Time
-}
-
 // cancelOngoingExecInstancesOfTask cancel any ongoing execution instances of a task
 func (s *schedulerImpl) cancelOngoingExecInstancesOfTask(
 	ctx context.Context, dbClient db.Database, taskEntry models.Task, timestamp time.Time,
@@ -118,12 +112,6 @@ func (s *schedulerImpl) processCancelTask(
 		)
 	}
 	return nil
-}
-
-// schedulerWorkReqTaskTimedOut [worker request] task timed out
-type schedulerWorkReqTaskTimedOut struct {
-	TaskID    string
-	Timestamp time.Time
 }
 
 /*

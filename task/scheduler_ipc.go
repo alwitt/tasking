@@ -15,7 +15,7 @@ import (
 
 // processQueue process the messages on the scheduler queue
 func (s *schedulerImpl) processQueue() {
-	logTags := s.GetLogTagsForContext(s.workerCtx)
+	logTags := s.GetLogTagsForContext(s.runCtx)
 
 	log.
 		WithFields(goutils.UpdateCodePositionInTags(logTags)).
@@ -26,7 +26,7 @@ func (s *schedulerImpl) processQueue() {
 
 	for {
 		// verify whether to stop
-		if err := s.workerCtx.Err(); err != nil {
+		if err := s.runCtx.Err(); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.
 					WithError(err).
@@ -36,11 +36,23 @@ func (s *schedulerImpl) processQueue() {
 			break
 		}
 
-		if err := s.processOneIPCRequest(s.workerCtx); err != nil {
+		if err := s.processOneIPCRequest(s.runCtx); err != nil {
+			// The message has already been dealt with (a completed handler always deletes its
+			// message; only a crash strands one for replay). The error only decides whether to
+			// stop: a broken database (models.SQLError) is fatal - every message would fail
+			// identically, so continuing is meaningless. Any other failure is logged and
+			// processing continues; the maintenance sweep re-drives the stranded work from the
+			// DB (the source of truth), so a single failing message never wedges the scheduler.
+			if isFatalDBError(err) {
+				log.
+					WithError(err).
+					WithFields(goutils.UpdateCodePositionInTags(logTags)).
+					Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+			}
 			log.
 				WithError(err).
 				WithFields(goutils.UpdateCodePositionInTags(logTags)).
-				Fatalf("Encountered fatal error while processing IPC messages:\n%+v", err)
+				Errorf("Failed to process IPC message (continuing):\n%+v", err)
 		}
 	}
 }
@@ -151,35 +163,7 @@ func (s *schedulerImpl) recoverBufferedMessages(ctx context.Context) error {
 		}
 
 		// Only messages the scheduler queue actually handles should be replayed.
-		switch typed := parsed.(type) {
-		case models.IPCMessageSystemTask:
-			switch typed.Type {
-			case models.IPCMsgTypeNewTask, models.IPCMsgTypeCancelTask:
-				// valid - fall through to re-enqueue below
-			default:
-				s.recordInvalidMessage(
-					ctx, payload,
-					fmt.Sprintf("unsupported system-task message type '%s'", typed.Type),
-				)
-				continue
-			}
-		case models.IPCMessageExecuteInstance:
-			switch typed.Type {
-			case models.IPCMsgTypeExecuteSucceeded,
-				models.IPCMsgTypeExecuteFailed,
-				models.IPCMsgTypeEngineFailed:
-				// valid - fall through to re-enqueue below
-			default:
-				s.recordInvalidMessage(
-					ctx, payload,
-					fmt.Sprintf("unsupported execute-instance message type '%s'", typed.Type),
-				)
-				continue
-			}
-		default:
-			s.recordInvalidMessage(
-				ctx, payload, fmt.Sprintf("unsupported message type '%s'", reflect.TypeOf(typed)),
-			)
+		if !s.isSupportedTaskMessage(ctx, payload, parsed) {
 			continue
 		}
 
@@ -198,23 +182,81 @@ func (s *schedulerImpl) recoverBufferedMessages(ctx context.Context) error {
 }
 
 /*
+isSupportedTaskMessage report whether a parsed IPC message is one the task scheduler queue
+handles. A message of any other shape/type on this queue is genuinely poison, so it is recorded
+(best-effort) and rejected. Shared by recoverBufferedMessages (replay filter) so the replay path
+and the live path agree on what is a valid task scheduler message.
+
+	@param ctx context.Context - execution context
+	@param payload string - the raw payload, for the audit record
+	@param parsed interface{} - the parsed message
+	@return whether the message is a supported task scheduler message
+*/
+func (s *schedulerImpl) isSupportedTaskMessage(
+	ctx context.Context, payload string, parsed interface{},
+) bool {
+	switch typed := parsed.(type) {
+	case models.IPCMessageSystemTask:
+		switch typed.Type {
+		case models.IPCMsgTypeNewTask, models.IPCMsgTypeCancelTask:
+			return true
+		default:
+			s.recordInvalidMessage(
+				ctx, payload,
+				fmt.Sprintf("unsupported system-task message type '%s'", typed.Type),
+			)
+			return false
+		}
+	case models.IPCMessageExecuteInstance:
+		switch typed.Type {
+		case models.IPCMsgTypeExecuteSucceeded,
+			models.IPCMsgTypeExecuteFailed,
+			models.IPCMsgTypeEngineFailed:
+			return true
+		default:
+			s.recordInvalidMessage(
+				ctx, payload,
+				fmt.Sprintf("unsupported execute-instance message type '%s'", typed.Type),
+			)
+			return false
+		}
+	case models.BaseIPCMessage:
+		if typed.Type == models.IPCMsgTypeTaskMaintenance {
+			return true
+		}
+		s.recordInvalidMessage(
+			ctx, payload, fmt.Sprintf("unsupported base message type '%s'", typed.Type),
+		)
+		return false
+	default:
+		s.recordInvalidMessage(
+			ctx, payload, fmt.Sprintf("unsupported message type '%s'", reflect.TypeOf(typed)),
+		)
+		return false
+	}
+}
+
+/*
 processOneIPCRequest process one IPC request on the scheduler queue.
 
-The scheduler queue is a reliable queue: DequeueMessage moves the message into a buffer
-queue, and the message is only removed from that buffer once we are done with it. The
-delete contract here is therefore explicit, not a blanket defer:
+The scheduler queue is a reliable queue: DequeueMessage moves the message into a buffer queue,
+and the message is only removed from that buffer once we are done with it. The buffer guards
+against exactly one thing - an application crash/panic mid-handling, where the handler never
+runs to completion. So the delete contract is keyed off *completion*, not success:
 
-  - Valid message, submitted to the worker successfully -> delete from buffer (done with it).
-  - Poison message (unreadable, unparsable, or unsupported type) -> record an audit event
-    and delete from buffer; it can never be processed, so replaying it would loop forever.
-  - Valid message but Submit failed -> Submit only fails while the scheduler is shutting
-    down, so leave the message in the buffer (do NOT delete) and return the error; startup
-    buffer recovery (recoverBufferedMessages) will replay it on the next start.
+  - Handler ran to completion (returned nil OR an error) -> delete from the buffer. We are done
+    with the message; only a crash (never a returned error) should strand one for replay.
+  - Poison message (unreadable, unparsable, or unsupported type) -> record an audit event and
+    delete from buffer; it can never be processed, so replaying it would loop forever.
 
-Note the messages are Submit-ed to the worker rather than handled inline: processQueue runs
-on its own goroutine, so the worker's event loop is a separate consumer that drains what we
-submit. This differs from performMaintenance, which calls the process* handlers directly
-because it runs ON the worker; the two must not be unified.
+The handler runs INLINE on this goroutine: there is no worker to submit to. The maintenance
+path (performMaintenance) calls the same process* handlers directly; it arrives here as a
+self-enqueued Task Maintenance message, so it rides the exact same serial path as every event.
+
+A handler error is returned to the caller (processQueue) *after* the delete. The error class
+does NOT affect the delete - it only lets the caller decide whether to stop (a broken DB) or
+log and continue (the maintenance sweep will re-drive the work from the DB). A DequeueMessage
+read error is an engine-level fault with no message to delete, so it is returned directly.
 
 	@param ctx context.Context - execution context
 */
@@ -222,7 +264,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 	logTags := s.GetLogTagsForContext(ctx)
 	msg, err := s.ipcReceiver.DequeueMessage(ctx, true, nil)
 	if err != nil {
-		// FATAL
+		// FATAL: could not read the queue. No message was staged, so nothing to delete.
 		return models.NewTaskSchedulerError("failed to read queue", err, true)
 	}
 
@@ -246,29 +288,22 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		return nil
 	}
 
+	// handlerErr captures the outcome of the dispatched handler. Whether it is nil or not, the
+	// message below is deleted (the handler completed); handlerErr is only returned afterward so
+	// the caller can classify fatal-vs-continue. A poison/unsupported message returns early (it
+	// is dropped, not handled) and never reaches the shared delete below.
+	var handlerErr error
+
 	switch typed := parsed.(type) {
 	case models.IPCMessageSystemTask:
 		switch typed.Type {
 		case models.IPCMsgTypeNewTask:
 			// New task pending scheduling
-			if err := s.worker.Submit(
-				ctx, schedulerWorkReqNewPendingTask{TaskID: typed.TaskID},
-			); err != nil {
-				// Submit only fails on shutdown: leave the message buffered for recovery.
-				return models.NewTaskSchedulerError(
-					"failed to submit new pending task request", err, true,
-				)
-			}
+			handlerErr = s.processNewPendingTask(ctx, typed.TaskID)
 
 		case models.IPCMsgTypeCancelTask:
 			// Task being cancelled
-			if err := s.worker.Submit(ctx, schedulerWorkReqCancelTask{
-				TaskID: typed.TaskID, Timestamp: typed.Timestamp,
-			}); err != nil {
-				return models.NewTaskSchedulerError(
-					"failed to submit cancel task request", err, true,
-				)
-			}
+			handlerErr = s.processCancelTask(ctx, typed.TaskID, typed.Timestamp)
 
 		default:
 			// Poison message: unsupported message type. Record and drop.
@@ -283,13 +318,7 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		switch typed.Type {
 		case models.IPCMsgTypeExecuteSucceeded:
 			// Task execution completed
-			if err := s.worker.Submit(ctx, schedulerWorkReqTaskExecutionComplete{
-				InstanceID: typed.InstanceID, Timestamp: typed.Timestamp,
-			}); err != nil {
-				return models.NewTaskSchedulerError(
-					"failed to submit process completed execution request", err, true,
-				)
-			}
+			handlerErr = s.processTaskExecutionComplete(ctx, typed.InstanceID, typed.Timestamp)
 
 		case models.IPCMsgTypeExecuteFailed:
 			// Task execution failed. The message carries the retry disposition, but the handler
@@ -297,29 +326,32 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			// the executor writes the column in the same step that sends this message, and that
 			// persisted value is the single source of truth - so the maintenance backstop, which
 			// has no message, reaches the same decision (DB is source of truth).
-			if err := s.worker.Submit(ctx, schedulerWorkReqTaskExecutionFailed{
-				InstanceID: typed.InstanceID, Timestamp: typed.Timestamp,
-			}); err != nil {
-				return models.NewTaskSchedulerError(
-					"failed to submit process failed execution request", err, true,
-				)
-			}
+			handlerErr = s.processTaskExecutionFailed(ctx, typed.InstanceID, typed.Timestamp)
 
 		case models.IPCMsgTypeEngineFailed:
 			// Core task engine failed to operate on the execution instance
-			if err := s.worker.Submit(ctx, schedulerWorkReqTaskExecutionEngineFailed{
-				InstanceID: typed.InstanceID, Timestamp: typed.Timestamp,
-			}); err != nil {
-				return models.NewTaskSchedulerError(
-					"failed to submit process engine failure request", err, true,
-				)
-			}
+			handlerErr = s.processTaskExecutionEngineFailed(ctx, typed.InstanceID, typed.Timestamp)
 
 		default:
 			// Poison message: unsupported message type. Record and drop.
 			s.recordAndDropInvalidMessage(
 				ctx, msg, payload,
 				fmt.Sprintf("unsupported execute-instance message type '%s'", typed.Type),
+			)
+			return nil
+		}
+
+	case models.BaseIPCMessage:
+		switch typed.Type {
+		case models.IPCMsgTypeTaskMaintenance:
+			// Run the periodic maintenance sweep - the universal backstop for lost pokes and the
+			// only path that fires scheduled/retry executions (which have no triggering message).
+			handlerErr = s.performMaintenance(ctx)
+
+		default:
+			s.recordAndDropInvalidMessage(
+				ctx, msg, payload,
+				fmt.Sprintf("unsupported base message type '%s'", typed.Type),
 			)
 			return nil
 		}
@@ -333,7 +365,8 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 		return nil
 	}
 
-	// Valid message submitted successfully - done with it, delete from the buffer.
+	// The handler ran to completion (success or failure) - done with the message, delete it from
+	// the buffer. The delete is best-effort and must not mask handlerErr.
 	if err := s.ipcReceiver.DeleteBufferedMessage(ctx, msg); err != nil {
 		log.
 			WithError(err).
@@ -341,5 +374,5 @@ func (s *schedulerImpl) processOneIPCRequest(ctx context.Context) error {
 			Error("Failed to delete processed IPC message from queue buffer")
 	}
 
-	return nil
+	return handlerErr
 }

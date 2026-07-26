@@ -21,36 +21,36 @@ import (
 type lifecycleTestScheduler struct {
 	scheduler   *schedulerImpl
 	ipcReceiver *mockcommon.IPCMessageReceive
-	worker      *mockgoutils.TaskProcessor
+	ipcSender   *mockcommon.IPCMessageSend
 	timer       *mockgoutils.IntervalTimer
 }
 
 // newLifecycleTestScheduler build a white-box schedulerImpl wired for Start/Stop: a real
-// cancelable worker context (Stop cancels it, which is how processQueue is told to exit),
-// plus mock worker, mock interval timer, and mock queue receiver.
+// cancelable run context (Stop cancels it, which is how processQueue is told to exit), plus
+// mock interval timer, mock queue receiver, and mock self-sender (the maintenance timer
+// enqueues onto it). There is no worker - the single processQueue goroutine is the only thread.
 func newLifecycleTestScheduler(t *testing.T) lifecycleTestScheduler {
 	mockClient := mockdb.NewClient(t)
 	ipcReceiver := mockcommon.NewIPCMessageReceive(t)
-	worker := mockgoutils.NewTaskProcessor(t)
+	ipcSender := mockcommon.NewIPCMessageSend(t)
 	timer := mockgoutils.NewIntervalTimer(t)
 
 	s := newProcessTestScheduler(mockClient, nil)
 	s.config = models.TaskSchedulerConfig{MaintenanceTimerIntSecs: 10}
 	s.ipcReceiver = ipcReceiver
-	s.worker = worker
+	s.ipcSender = ipcSender
 	s.maintenanceTimer = timer
-	s.workerCtx, s.workerCtxCancel = context.WithCancel(context.Background())
+	s.runCtx, s.runCtxCancel = context.WithCancel(context.Background())
 
 	return lifecycleTestScheduler{
-		scheduler: s, ipcReceiver: ipcReceiver, worker: worker, timer: timer,
+		scheduler: s, ipcReceiver: ipcReceiver, ipcSender: ipcSender, timer: timer,
 	}
 }
 
-// TestSchedulerStartStop exercises the full lifecycle: Start recovers the buffer, starts
-// the worker + maintenance timer, and launches the processQueue goroutine; Stop cancels
-// the worker context (unblocking processQueue), stops the timer and worker, and waits for
-// the goroutine to finish. Stop is asserted in the same test so the launched goroutine is
-// always torn down.
+// TestSchedulerStartStop exercises the full lifecycle: Start recovers the buffer, starts the
+// maintenance timer, and launches the processQueue goroutine; Stop stops the timer, cancels
+// the run context (unblocking processQueue), and waits for the goroutine to finish. Stop is
+// asserted in the same test so the launched goroutine is always torn down.
 func TestSchedulerStartStop(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 
@@ -61,19 +61,18 @@ func TestSchedulerStartStop(t *testing.T) {
 
 		h := newLifecycleTestScheduler(t)
 
-		// Start: empty buffer recovery, worker start, timer start.
+		// Start: empty buffer recovery, then timer start.
 		h.ipcReceiver.EXPECT().
 			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
 			Return(nil, nil).
 			Once()
-		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
 		h.timer.EXPECT().
 			Start(h.scheduler.config.MaintenanceTimerInt(), mock.Anything, false).
 			Return(nil).
 			Once()
 
 		// The processQueue goroutine blocks in DequeueMessage until Stop cancels the
-		// worker context; on cancellation it returns (nil, nil), which processQueue
+		// run context; on cancellation it returns (nil, nil), which processQueue
 		// treats as a no-op, loops, sees the cancelled context, and exits cleanly.
 		// entered is closed once the goroutine reaches the blocking read, so the test
 		// can wait for the loop to actually be running before calling Stop (deterministic,
@@ -95,9 +94,8 @@ func TestSchedulerStartStop(t *testing.T) {
 		// Wait until the goroutine is blocked in the read before tearing it down.
 		<-entered
 
-		// Stop: cancels the worker context, stops timer + worker, waits for the goroutine.
+		// Stop: stops the timer, cancels the run context, waits for the goroutine.
 		h.timer.EXPECT().Stop().Return(nil).Once()
-		h.worker.EXPECT().StopEventLoop().Return(nil).Once()
 
 		assert.Nil(h.scheduler.Stop(context.Background()))
 	})
@@ -107,30 +105,12 @@ func TestSchedulerStartStop(t *testing.T) {
 
 		h := newLifecycleTestScheduler(t)
 
-		// Recovery reads the buffer first; a read error is fatal to Start, so neither the
-		// worker nor the timer is started and no goroutine is launched.
+		// Recovery reads the buffer first; a read error is fatal to Start, so the timer is
+		// not started and no goroutine is launched.
 		h.ipcReceiver.EXPECT().
 			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
 			Return(nil, simErr).
 			Once()
-
-		err := h.scheduler.Start(context.Background())
-		assert.NotNil(err)
-		var schedErr models.TaskSchedulerError
-		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
-	})
-
-	t.Run("worker start failure aborts start", func(t *testing.T) {
-		assert := assert.New(t)
-
-		h := newLifecycleTestScheduler(t)
-
-		h.ipcReceiver.EXPECT().
-			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
-			Return(nil, nil).
-			Once()
-		// Worker fails to start: Start aborts before the timer or the goroutine.
-		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(simErr).Once()
 
 		err := h.scheduler.Start(context.Background())
 		assert.NotNil(err)
@@ -147,7 +127,6 @@ func TestSchedulerStartStop(t *testing.T) {
 			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
 			Return(nil, nil).
 			Once()
-		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
 		// Timer fails to start: Start aborts before launching the processQueue goroutine,
 		// so DequeueMessage is never called.
 		h.timer.EXPECT().
@@ -161,7 +140,7 @@ func TestSchedulerStartStop(t *testing.T) {
 		assert.True(errors.As(err, &schedErr), "expected TaskSchedulerError, got %T: %v", err, err)
 	})
 
-	t.Run("stop tolerates timer and worker stop failures", func(t *testing.T) {
+	t.Run("stop tolerates a timer stop failure", func(t *testing.T) {
 		assert := assert.New(t)
 
 		h := newLifecycleTestScheduler(t)
@@ -170,7 +149,6 @@ func TestSchedulerStartStop(t *testing.T) {
 			DequeueBufferedMessage(mock.Anything, true, mock.Anything).
 			Return(nil, nil).
 			Once()
-		h.worker.EXPECT().StartEventLoop(mock.Anything).Return(nil).Once()
 		h.timer.EXPECT().
 			Start(h.scheduler.config.MaintenanceTimerInt(), mock.Anything, false).
 			Return(nil).
@@ -190,10 +168,9 @@ func TestSchedulerStartStop(t *testing.T) {
 		assert.Nil(h.scheduler.Start(context.Background()))
 		<-entered
 
-		// Both stop calls fail: Stop logs them but still cancels the context and waits for
-		// the goroutine, so it returns nil once the goroutine has drained.
+		// The timer stop fails: Stop logs it but still cancels the context and waits for the
+		// goroutine, so it returns nil once the goroutine has drained.
 		h.timer.EXPECT().Stop().Return(simErr).Once()
-		h.worker.EXPECT().StopEventLoop().Return(simErr).Once()
 
 		assert.Nil(h.scheduler.Stop(context.Background()))
 	})

@@ -35,6 +35,10 @@ const (
 	// failure, distinct from IPCMsgTypeExecuteFailed which reports a failure
 	// during actual task execution.
 	IPCMsgTypeEngineFailed IPCMessageTypeEnum = "IPC_TASK_ENG_ENGINE_FAILED"
+	// IPCMsgTypeTaskMaintenance IPC message triggering the task scheduler's periodic
+	// maintenance sweep. Self-enqueued by the maintenance interval timer onto the
+	// scheduler's own queue; carries no payload beyond the base message.
+	IPCMsgTypeTaskMaintenance IPCMessageTypeEnum = "IPC_TASK_ENG_MAINTENANCE"
 
 	// ----------------------------------------------------------------------------------
 	// Workflow scheduler IPC message types. These drive the workflow scheduler's single-thread
@@ -76,6 +80,7 @@ func (IPCMessageTypeEnum) Values() []IPCMessageTypeEnum {
 		IPCMsgTypeExecuteSucceeded,
 		IPCMsgTypeExecuteFailed,
 		IPCMsgTypeEngineFailed,
+		IPCMsgTypeTaskMaintenance,
 		IPCMsgTypeWFProcessWorkflow,
 		IPCMsgTypeWFScheduleStep,
 		IPCMsgTypeWFStepExecUpdate,
@@ -198,6 +203,8 @@ func ParseIPCMessage(validator *validator.Validate, msg []byte) (interface{}, er
 		}
 		return parsed, validate(&parsed)
 
+	case IPCMsgTypeTaskMaintenance:
+		fallthrough
 	case IPCMsgTypeWFMaintenance:
 		// Carries no payload beyond the base message, already parsed and validated above.
 		return asBaseMsg, nil
@@ -525,6 +532,18 @@ func PrepareIPCMsgWFReviveWorkflow(
 		},
 		WorkflowID:  workflowID,
 		NewDeadline: newDeadline,
+	}
+}
+
+// PrepareIPCMsgTaskMaintenance build IPC message `IPC_TASK_ENG_MAINTENANCE`
+func PrepareIPCMsgTaskMaintenance(
+	sender string, timestamp time.Time,
+) goutilsRedis.QueueMessageEnvelope {
+	return BaseIPCMessage{
+		ID:        ulid.Make().String(),
+		Type:      IPCMsgTypeTaskMaintenance,
+		Sender:    sender,
+		Timestamp: timestamp,
 	}
 }
 

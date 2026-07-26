@@ -10,12 +10,6 @@ import (
 	"github.com/apex/log"
 )
 
-// schedulerWorkReqRunMaintenance [worker request] perform maintenance.
-//
-// It carries no fields: it is only a type key that routes to the maintenance handler,
-// which reads the current time itself when it runs (rather than when it was submitted).
-type schedulerWorkReqRunMaintenance struct{}
-
 /*
 performMaintenance process framework maintenance
 

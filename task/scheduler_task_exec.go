@@ -11,12 +11,6 @@ import (
 	"github.com/apex/log"
 )
 
-// schedulerWorkReqTaskExecutionStarting [worker request] task execution scheduled to start
-type schedulerWorkReqTaskExecutionStarting struct {
-	InstanceID string
-	Timestamp  time.Time
-}
-
 // fetchExecInstanceAndParentTask fetch an execution instance and its parent task
 func (s *schedulerImpl) fetchExecInstanceAndParentTask(
 	ctx context.Context, dbClient db.Database, instanceID string,
@@ -115,12 +109,6 @@ func (s *schedulerImpl) processTaskExecutionStarting(
 	return nil
 }
 
-// schedulerWorkReqTaskExecutionComplete [worker request] task execution instance completed
-type schedulerWorkReqTaskExecutionComplete struct {
-	InstanceID string
-	Timestamp  time.Time
-}
-
 /*
 processTaskExecutionComplete process completion of task execution
 
@@ -176,12 +164,6 @@ func (s *schedulerImpl) processTaskExecutionComplete(
 		)
 	}
 	return nil
-}
-
-// schedulerWorkReqTaskExecutionFailed [worker request] task execution instance failed
-type schedulerWorkReqTaskExecutionFailed struct {
-	InstanceID string
-	Timestamp  time.Time
 }
 
 /*
@@ -312,14 +294,6 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 	return nil
 }
 
-// schedulerWorkReqTaskExecutionEngineFailed [worker request] the core task engine failed to
-// operate on an execution instance (e.g. the receiver could not claim it, or could not submit
-// it to the executor)
-type schedulerWorkReqTaskExecutionEngineFailed struct {
-	InstanceID string
-	Timestamp  time.Time
-}
-
 /*
 processTaskExecutionEngineFailed process an engine-level failure on a task execution instance.
 
@@ -401,12 +375,6 @@ func (s *schedulerImpl) processTaskExecutionEngineFailed(
 		)
 	}
 	return nil
-}
-
-// schedulerWorkReqTaskExecutionTimedOut [worker request] task execution instance timed out
-type schedulerWorkReqTaskExecutionTimedOut struct {
-	InstanceID string
-	Timestamp  time.Time
 }
 
 /*

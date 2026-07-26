@@ -19,8 +19,9 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// validSchedulerConfig build a TaskSchedulerConfig which passes validation. The
-// single task mapping means exactly one IPC sender factory call is expected.
+// validSchedulerConfig build a TaskSchedulerConfig which passes validation. The single task
+// mapping plus the scheduler's own self-sender means two IPC sender factory calls are expected
+// (the self-sender on the scheduler queue is built first, then one per task mapping).
 func validSchedulerConfig() models.TaskSchedulerConfig {
 	return models.TaskSchedulerConfig{
 		MaintenanceTimerIntSecs: 10,
@@ -96,7 +97,8 @@ func TestNewScheduler(t *testing.T) {
 		mockClient := mockdb.NewClient(t)
 		mockRedis := mockredis.NewClient(t)
 
-		// Receiver factory succeeds so the per-mapping sender loop is reached.
+		// Receiver factory succeeds so the sender construction is reached (the self-sender is
+		// built first, so this failure is hit on the very first NewRedisIPCMsgSender call).
 		cbMock.EXPECT().
 			NewRedisIPCMsgReceiver(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(mockcommon.NewIPCMessageReceive(t), nil)
