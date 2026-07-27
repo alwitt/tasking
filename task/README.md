@@ -70,9 +70,11 @@ err = client.CancelTask(ctx, t.ID, nil)
 ## Running work (`Receiver` + `Executor` + a processor)
 
 Implement `models.TaskExecutionProcessor` for each task name and let the receiver drive it.
-Processors are registered on the `Executor`, and the app supplies the executors by wrapping
-`task.NewExecutor` in its `ExecutorFactory` — the factory is where you create the executor and
-`RegisterTaskProcessor` on it before returning it:
+Processors are supplied **declaratively** at construction — there is no runtime registration call.
+You give the receiver a per-queue `task name → processor` map (`NewReceiverParams.Processors`); the
+receiver hands each queue's inner map to that queue's `Executor` through your `ExecutorFactory`,
+which just forwards it to `task.NewExecutor`. The map is fixed at construction and immutable
+thereafter:
 
 ```go
 type resizeProcessor struct{}
@@ -84,24 +86,27 @@ func (p resizeProcessor) ProcessTaskExecution(
     return nil // or an error → the execution FAILS (and may be retried)
 }
 
-// The factory: build the executor, register this host's processors, return it.
+// Per-queue processor mapping: queue name → (task name → processor). Every key must be a queue
+// this receiver is configured to serve; a nil processor is rejected up front by NewExecutor.
+processors := map[string]map[string]models.TaskExecutionProcessor{
+    "default-queue": {
+        "resize-image": resizeProcessor{},
+    },
+}
+
+// The factory just forwards the per-queue processor map to NewExecutor.
 executorFactory := func(
-    parentCtx context.Context, queue string, workers, bufLen int, support task.ExecutorSupport,
+    parentCtx context.Context, queue string, workers, bufLen int,
+    support task.ExecutorSupport, queueProcessors map[string]models.TaskExecutionProcessor,
 ) (task.Executor, error) {
-    exec, err := task.NewExecutor(parentCtx, queue, workers, bufLen, support)
-    if err != nil {
-        return nil, err
-    }
-    if err := exec.RegisterTaskProcessor("resize-image", resizeProcessor{}); err != nil {
-        return nil, err
-    }
-    return exec, nil
+    return task.NewExecutor(parentCtx, queue, workers, bufLen, support, queueProcessors)
 }
 
 receiver, err := task.NewReceiver(ctx, task.NewReceiverParams{
     Support:            task.ExecutorSupport{Persistence: dbClient /* OnCompleteCB set internally */},
-    Config:             receiverConfig,     // models.TaskReceiverConfig
+    Config:             receiverConfig,     // models.TaskReceiverConfig — must configure "default-queue"
     ExecutorFactory:    executorFactory,
+    Processors:         processors,         // per-queue task-name → processor mapping
     Redis:              redisClient,
     IPCReceiverFactory: common.NewRedisIPCMessageReceive,
     IPCSenderFactory:   common.NewRedisIPCMessageSend,

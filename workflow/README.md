@@ -130,9 +130,16 @@ runner, err := workflow.NewRunWorkflowStepTaskProcessor(dbClient, map[string]mod
     "push-cdn":        cdnHandler{},
 })
 
-// Register the runner with the task engine under the reserved workflow task name, in the
-// executor factory you pass to task.NewReceiver:
-exec.RegisterTaskProcessor(models.WorkflowExecutionTaskName, runner)
+// Hand the runner to the task engine as the processor for the reserved workflow task name. Task
+// processors are supplied declaratively (no registration call): place the runner in the per-queue
+// processor map you pass as task.NewReceiverParams.Processors, on the queue that serves it —
+// alongside any ordinary task processors on that queue.
+processors := map[string]map[string]models.TaskExecutionProcessor{
+    "workflow-queue": {
+        models.WorkflowExecutionTaskName: runner,
+    },
+}
+// ... then: task.NewReceiver(ctx, task.NewReceiverParams{Processors: processors, /* ... */})
 ```
 
 The runner never talks to the workflow scheduler about results. When a step's task reaches a
