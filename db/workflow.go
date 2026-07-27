@@ -36,7 +36,7 @@ func (c *databaseImpl) DefineNewWorkflow(
 
 	// Construct the workflow first
 	workflowMetadataStr, _ := json.Marshal(&workflowSpec.Metadata)
-	newWorkflow := workflowEntry{
+	newWorkflow := WorkflowEntry{
 		Workflow: models.Workflow{
 			ID:       ulid.Make().String(),
 			Name:     workflowSpec.Name,
@@ -54,8 +54,8 @@ func (c *databaseImpl) DefineNewWorkflow(
 	}
 
 	// Define the workflow steps
-	steps := []workflowStepEntry{}
-	stepsByName := map[string]workflowStepEntry{}
+	steps := []WorkflowStepEntry{}
+	stepsByName := map[string]WorkflowStepEntry{}
 	for _, oneStep := range workflowSpec.Steps {
 		paramsStr, _ := json.Marshal(&oneStep.Parameters)
 		stepMetadataStr, _ := json.Marshal(&oneStep.Metadata)
@@ -65,7 +65,7 @@ func (c *databaseImpl) DefineNewWorkflow(
 			parentSteps.ParentStepNames = append(parentSteps.ParentStepNames, oneParent)
 		}
 
-		newStep := workflowStepEntry{
+		newStep := WorkflowStepEntry{
 			WorkflowStep: models.WorkflowStep{
 				ID:          ulid.Make().String(),
 				Name:        oneStep.Name,
@@ -96,7 +96,7 @@ func (c *databaseImpl) DefineNewWorkflow(
 	// WorkflowStep.Parents JSON blob (read by ListWorkflowSteps) and the workflow_step_
 	// dependencies edge rows (read by ListWorkflowStepsReadyToRun). They must stay in sync;
 	// the edge rows are authoritative for DAG queries.
-	childToParentStepLinks := []workflowStepDependency{}
+	childToParentStepLinks := []WorkflowStepDependency{}
 	for _, childStep := range steps {
 		// Generate a link for each child-parent tuple
 		for _, oneParent := range childStep.Parents.ParentStepNames {
@@ -110,7 +110,7 @@ func (c *databaseImpl) DefineNewWorkflow(
 					true,
 				)
 			}
-			childToParentStepLinks = append(childToParentStepLinks, workflowStepDependency{
+			childToParentStepLinks = append(childToParentStepLinks, WorkflowStepDependency{
 				StepID: childStep.ID, DependsOnID: parentStep.ID,
 			})
 		}
@@ -153,9 +153,9 @@ func (c *databaseImpl) DefineNewWorkflow(
 }
 
 // getWorkflowDBEntry fetch a workflow entry
-func (c *databaseImpl) getWorkflowDBEntry(workflowID string) (workflowEntry, error) {
-	var entry workflowEntry
-	tmp := c.db.Model(&workflowEntry{}).Where("id = ?", workflowID).First(&entry)
+func (c *databaseImpl) getWorkflowDBEntry(workflowID string) (WorkflowEntry, error) {
+	var entry WorkflowEntry
+	tmp := c.db.Model(&WorkflowEntry{}).Where("id = ?", workflowID).First(&entry)
 	return entry, notFoundOrError(tmp.Error, "workflow", workflowID)
 }
 
@@ -200,13 +200,13 @@ func (c *databaseImpl) updateWorkflowState(
 		if entry.State == models.WorkflowStatePending {
 			// Record the start time
 			tmp = c.db.
-				Model(&workflowEntry{}).
+				Model(&WorkflowEntry{}).
 				Where("id = ?", workflowID).
-				Updates(workflowEntry{
+				Updates(WorkflowEntry{
 					Workflow: models.Workflow{State: newState, StartedAt: &timestamp},
 				})
 		} else {
-			tmp = c.db.Model(&workflowEntry{}).Where("id = ?", workflowID).Update("state", newState)
+			tmp = c.db.Model(&WorkflowEntry{}).Where("id = ?", workflowID).Update("state", newState)
 		}
 
 	case models.WorkflowStateComplete:
@@ -214,14 +214,14 @@ func (c *databaseImpl) updateWorkflowState(
 	case models.WorkflowStateCancelled:
 		// Record the stop time
 		tmp = c.db.
-			Model(&workflowEntry{}).
+			Model(&WorkflowEntry{}).
 			Where("id = ?", workflowID).
-			Updates(workflowEntry{
+			Updates(WorkflowEntry{
 				Workflow: models.Workflow{State: newState, StoppedAt: &timestamp},
 			})
 
 	default:
-		tmp = c.db.Model(&workflowEntry{}).Where("id = ?", workflowID).Update("state", newState)
+		tmp = c.db.Model(&WorkflowEntry{}).Where("id = ?", workflowID).Update("state", newState)
 	}
 
 	if tmp.Error != nil {
@@ -362,7 +362,7 @@ func (c *databaseImpl) ListWorkflows(
 		return nil, goutils.NewValidationError("workflow query filter is not valid", err, true)
 	}
 
-	query := c.db.Model(&workflowEntry{})
+	query := c.db.Model(&WorkflowEntry{})
 
 	if len(filters.TargetIDs) > 0 {
 		query = query.Where("id in ?", filters.TargetIDs)
@@ -389,7 +389,7 @@ func (c *databaseImpl) ListWorkflows(
 
 	query = query.Order("created_at")
 
-	var entries []workflowEntry
+	var entries []WorkflowEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, models.NewSQLError("failed to list workflows", tmp.Error, true)
 	}
@@ -459,9 +459,9 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 			stepIDs = append(stepIDs, step.ID)
 		}
 
-		var linkEntries []workflowStepRunnerTask
+		var linkEntries []WorkflowStepRunnerTask
 		if tmp := c.db.
-			Model(&workflowStepRunnerTask{}).
+			Model(&WorkflowStepRunnerTask{}).
 			Where("step_id in ?", stepIDs).
 			Find(&linkEntries); tmp.Error != nil {
 			return models.NewSQLError(
@@ -481,7 +481,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 			}
 			// Reap the step tasks. This cascades their task_executions (history) and the
 			// workflow_step_runner_tasks link rows via the task-side FK cascade.
-			if tmp := c.db.Where("id in ?", taskIDs).Delete(&taskEntry{}); tmp.Error != nil {
+			if tmp := c.db.Where("id in ?", taskIDs).Delete(&TaskEntry{}); tmp.Error != nil {
 				return models.NewSQLError(
 					fmt.Sprintf("failed to reap tasks of workflow %s", workflowID), tmp.Error, true,
 				)
@@ -491,7 +491,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 
 	// Delete the workflow. This cascades its steps, their dependency edges, and any remaining
 	// link rows via the step-side FK cascade.
-	tmp := c.db.Where("id = ?", workflowID).Delete(&workflowEntry{})
+	tmp := c.db.Where("id = ?", workflowID).Delete(&WorkflowEntry{})
 	if tmp.Error != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to delete workflow %s", workflowID), tmp.Error, true,
@@ -534,7 +534,7 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 
 	// Update the workflow deadline
 	if tmp := c.db.
-		Model(&workflowEntry{}).
+		Model(&WorkflowEntry{}).
 		Where("id = ?", workflowID).
 		UpdateColumn("deadline", &deadline); tmp.Error != nil {
 		return models.NewSQLError(
@@ -544,7 +544,7 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 
 	// Re-sync the deadline onto every non-terminal step of the workflow
 	if tmp := c.db.
-		Model(&workflowStepEntry{}).
+		Model(&WorkflowStepEntry{}).
 		Where("workflow_id = ? and state not in ?", workflowID, []models.WorkflowStepStateENUM{
 			models.WorkflowStepStateComplete,
 			models.WorkflowStepStateCancelled,
@@ -573,9 +573,9 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 // Workflow Steps
 
 // getWorkflowStepDBEntry fetch a workflow step entry
-func (c *databaseImpl) getWorkflowStepDBEntry(stepID string) (workflowStepEntry, error) {
-	var entry workflowStepEntry
-	tmp := c.db.Model(&workflowStepEntry{}).Where("id = ?", stepID).First(&entry)
+func (c *databaseImpl) getWorkflowStepDBEntry(stepID string) (WorkflowStepEntry, error) {
+	var entry WorkflowStepEntry
+	tmp := c.db.Model(&WorkflowStepEntry{}).Where("id = ?", stepID).First(&entry)
 	return entry, notFoundOrError(tmp.Error, "workflow step", stepID)
 }
 
@@ -609,9 +609,9 @@ same depth.
 func (c *databaseImpl) ListWorkflowSteps(
 	_ context.Context, workflowID string,
 ) ([]models.WorkflowStep, error) {
-	var entries []workflowStepEntry
+	var entries []WorkflowStepEntry
 	if tmp := c.db.
-		Model(&workflowStepEntry{}).
+		Model(&WorkflowStepEntry{}).
 		Where("workflow_id = ?", workflowID).
 		Find(&entries); tmp.Error != nil {
 		return nil, models.NewSQLError(
@@ -687,7 +687,7 @@ func (c *databaseImpl) ListWorkflowStepsReadyToRun(
 	// JOINs keep root steps (which have no dependency rows, leaving parent.state NULL) in
 	// the result set. A step qualifies only when none of its parents are incomplete; since
 	// COUNT ignores NULLs, root steps naturally pass the HAVING clause.
-	var entries []workflowStepEntry
+	var entries []WorkflowStepEntry
 	tmp := c.db.
 		Table("workflow_steps as step").
 		Select("step.*").
@@ -736,9 +736,9 @@ func (c *databaseImpl) updateWorkflowStepState(
 	}
 
 	// Fetch the targeted steps, constrained to the parent workflow
-	var entries []workflowStepEntry
+	var entries []WorkflowStepEntry
 	if tmp := c.db.
-		Model(&workflowStepEntry{}).
+		Model(&WorkflowStepEntry{}).
 		Where("id in ? and workflow_id = ?", deDuppedStepIDs, workflowID).
 		Find(&entries); tmp.Error != nil {
 		return models.NewSQLError(
@@ -768,12 +768,12 @@ func (c *databaseImpl) updateWorkflowStepState(
 	}
 
 	// Apply the given column values to a group of steps, scoped to the parent workflow.
-	applyUpdate := func(ids []string, values workflowStepEntry) error {
+	applyUpdate := func(ids []string, values WorkflowStepEntry) error {
 		if len(ids) == 0 {
 			return nil
 		}
 		tmp := c.db.
-			Model(&workflowStepEntry{}).
+			Model(&WorkflowStepEntry{}).
 			Where("id in ? and workflow_id = ?", ids, workflowID).
 			Updates(values)
 		if tmp.Error != nil {
@@ -790,7 +790,7 @@ func (c *databaseImpl) updateWorkflowStepState(
 		// ValidNextState), i.e. a user reviving the step. Record that the user restarted it.
 		// (user_restarted is only ever set true, never cleared, so the zero-value skip in a
 		// struct Updates is not a concern here.)
-		if err := applyUpdate(deDuppedStepIDs, workflowStepEntry{
+		if err := applyUpdate(deDuppedStepIDs, WorkflowStepEntry{
 			WorkflowStep: models.WorkflowStep{State: newState, UserRestarted: true},
 		}); err != nil {
 			return err
@@ -801,7 +801,7 @@ func (c *databaseImpl) updateWorkflowStepState(
 		// step here records a fresh start time. A user-revived step re-runs from DEFINED (where
 		// user_restarted was set) and flows through PENDING as well, so nothing extra is needed
 		// here.
-		if err := applyUpdate(deDuppedStepIDs, workflowStepEntry{
+		if err := applyUpdate(deDuppedStepIDs, WorkflowStepEntry{
 			WorkflowStep: models.WorkflowStep{State: newState, StartedAt: &timestamp},
 		}); err != nil {
 			return err
@@ -811,14 +811,14 @@ func (c *databaseImpl) updateWorkflowStepState(
 		fallthrough
 	case models.WorkflowStepStateCancelled:
 		// Record the stop time
-		if err := applyUpdate(deDuppedStepIDs, workflowStepEntry{
+		if err := applyUpdate(deDuppedStepIDs, WorkflowStepEntry{
 			WorkflowStep: models.WorkflowStep{State: newState, StoppedAt: &timestamp},
 		}); err != nil {
 			return err
 		}
 
 	default:
-		if err := applyUpdate(deDuppedStepIDs, workflowStepEntry{
+		if err := applyUpdate(deDuppedStepIDs, WorkflowStepEntry{
 			WorkflowStep: models.WorkflowStep{State: newState},
 		}); err != nil {
 			return err
@@ -1013,7 +1013,7 @@ user-initiated revive); each task executes exactly one step.
 func (c *databaseImpl) LinkWorkflowStepWithExecutorTask(
 	_ context.Context, stepID string, taskID string,
 ) error {
-	entry := workflowStepRunnerTask{StepID: stepID, TaskID: taskID}
+	entry := WorkflowStepRunnerTask{StepID: stepID, TaskID: taskID}
 	if tmp := c.db.Create(&entry); tmp.Error != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to link workflow step %s with task %s", stepID, taskID),
@@ -1062,7 +1062,7 @@ func (c *databaseImpl) GetWorkflowStepAndExecutorTask(
 		})
 	}
 
-	var taskEntries []taskEntry
+	var taskEntries []TaskEntry
 	if tmp := query.Find(&taskEntries); tmp.Error != nil {
 		return models.WorkflowStep{}, nil, models.NewSQLError(
 			fmt.Sprintf("failed to fetch tasks linked to workflow step %s", stepID), tmp.Error, true,
@@ -1087,7 +1087,7 @@ GetWorkflowStepProcessedByTask fetch the workflow step a task worked on, if any.
 func (c *databaseImpl) GetWorkflowStepProcessedByTask(
 	_ context.Context, taskID string,
 ) (models.WorkflowStep, error) {
-	var entry workflowStepEntry
+	var entry WorkflowStepEntry
 	tmp := c.db.
 		Table("workflow_steps as step").
 		Select("step.*").

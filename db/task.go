@@ -44,7 +44,7 @@ func (c *databaseImpl) DefineNewOneShotTask(
 	parametersStr, _ := json.Marshal(&params.Parameters)
 	metadataStr, _ := json.Marshal(&params.Metadata)
 
-	newEntry := taskEntry{
+	newEntry := TaskEntry{
 		Task: models.Task{
 			ID:                ulid.Make().String(),
 			TaskName:          params.Name,
@@ -104,7 +104,7 @@ func (c *databaseImpl) DefineNewScheduledOneShotTask(
 	parametersStr, _ := json.Marshal(&params.Parameters)
 	metadataStr, _ := json.Marshal(&params.Metadata)
 
-	newEntry := taskEntry{
+	newEntry := TaskEntry{
 		Task: models.Task{
 			ID:                ulid.Make().String(),
 			TaskName:          params.Name,
@@ -135,9 +135,9 @@ func (c *databaseImpl) DefineNewScheduledOneShotTask(
 }
 
 // getTaskDBEntry helper function to fetch one task
-func (c *databaseImpl) getTaskDBEntry(taskID string) (taskEntry, error) {
-	var entry taskEntry
-	tmp := c.db.Model(&taskEntry{}).Where("id = ?", taskID).First(&entry)
+func (c *databaseImpl) getTaskDBEntry(taskID string) (TaskEntry, error) {
+	var entry TaskEntry
+	tmp := c.db.Model(&TaskEntry{}).Where("id = ?", taskID).First(&entry)
 	return entry, notFoundOrError(tmp.Error, "task", taskID)
 }
 
@@ -169,7 +169,7 @@ func (c *databaseImpl) updateTaskState(
 	}
 
 	tmp := c.db.
-		Model(&taskEntry{}).
+		Model(&TaskEntry{}).
 		Where("id = ?", entry.ID).
 		UpdateColumn("state", nextState)
 	if tmp.Error != nil {
@@ -277,7 +277,7 @@ func (c *databaseImpl) UpdateTaskDeadline(
 		return err
 	}
 
-	tmp := c.db.Model(&taskEntry{}).Where("id = ?", entry.ID).UpdateColumn("deadline", &deadline)
+	tmp := c.db.Model(&TaskEntry{}).Where("id = ?", entry.ID).UpdateColumn("deadline", &deadline)
 	if tmp.Error != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to update task %s deadline", taskID), tmp.Error, true,
@@ -301,7 +301,7 @@ func (c *databaseImpl) ListTasks(
 		return nil, goutils.NewValidationError("task query filter is not valid", err, true)
 	}
 
-	query := c.db.Model(&taskEntry{})
+	query := c.db.Model(&TaskEntry{})
 
 	if len(filters.TargetIDs) > 0 {
 		query = query.Where("id in ?", filters.TargetIDs)
@@ -332,7 +332,7 @@ func (c *databaseImpl) ListTasks(
 
 	query = query.Order("created_at")
 
-	var entries []taskEntry
+	var entries []TaskEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, models.NewSQLError("failed to list tasks", tmp.Error, true)
 	}
@@ -363,7 +363,7 @@ func (c *databaseImpl) DeleteTask(ctx context.Context, taskID string) error {
 	// path (DeleteWorkflow) reaps these tasks directly, bypassing this guard.
 	var linkCount int64
 	if tmp := c.db.
-		Model(&workflowStepRunnerTask{}).
+		Model(&WorkflowStepRunnerTask{}).
 		Where("task_id = ?", taskID).
 		Count(&linkCount); tmp.Error != nil {
 		return models.NewSQLError(
@@ -379,7 +379,7 @@ func (c *databaseImpl) DeleteTask(ctx context.Context, taskID string) error {
 		)
 	}
 
-	tmp := c.db.Where("id = ?", entry.ID).Delete(&taskEntry{})
+	tmp := c.db.Where("id = ?", entry.ID).Delete(&TaskEntry{})
 	if tmp.Error != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to delete task %s", taskID), tmp.Error, true,
@@ -413,7 +413,7 @@ DefineNewTaskExecInstance define a new execution instance for a task
 func (c *databaseImpl) DefineNewTaskExecInstance(
 	_ context.Context, task models.Task,
 ) (models.TaskExecution, error) {
-	newEntry := taskExecutionEntry{
+	newEntry := TaskExecutionEntry{
 		TaskExecution: models.TaskExecution{
 			ID:       ulid.Make().String(),
 			TaskID:   task.ID,
@@ -468,7 +468,7 @@ func (c *databaseImpl) DefineNewTaskRetryExecInstance(
 	failedEntry models.TaskExecution,
 	targetRunTime time.Time,
 ) (models.TaskExecution, error) {
-	newEntry := taskExecutionEntry{
+	newEntry := TaskExecutionEntry{
 		TaskExecution: models.TaskExecution{
 			ID:                     ulid.Make().String(),
 			TaskID:                 task.ID,
@@ -496,9 +496,9 @@ func (c *databaseImpl) DefineNewTaskRetryExecInstance(
 }
 
 // getTaskExecDBEntry helper function to fetch one task exec instance
-func (c *databaseImpl) getTaskExecDBEntry(instanceID string) (taskExecutionEntry, error) {
-	var entry taskExecutionEntry
-	tmp := c.db.Model(&taskExecutionEntry{}).Where("id = ?", instanceID).First(&entry)
+func (c *databaseImpl) getTaskExecDBEntry(instanceID string) (TaskExecutionEntry, error) {
+	var entry TaskExecutionEntry
+	tmp := c.db.Model(&TaskExecutionEntry{}).Where("id = ?", instanceID).First(&entry)
 	return entry, notFoundOrError(tmp.Error, "task execution", instanceID)
 }
 
@@ -531,7 +531,7 @@ func (c *databaseImpl) ListAllExecutions(
 			goutils.NewValidationError("task execution instance query filter is not valid", err, true)
 	}
 
-	query := c.db.Model(&taskExecutionEntry{})
+	query := c.db.Model(&TaskExecutionEntry{})
 
 	if filters.ParentTaskID != nil {
 		query = query.Where("task_id = ?", *filters.ParentTaskID)
@@ -570,7 +570,7 @@ func (c *databaseImpl) ListAllExecutions(
 
 	query = query.Order("created_at")
 
-	var entries []taskExecutionEntry
+	var entries []TaskExecutionEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, models.NewSQLError("failed to list task execution instances", tmp.Error, true)
 	}
@@ -654,7 +654,7 @@ func (c *databaseImpl) updateTaskExecutionState(
 		theUpdate["terminated_at"] = terminatedAt
 	}
 
-	tmp := c.db.Model(&taskExecutionEntry{}).Where("id = ?", entry.ID).Updates(theUpdate)
+	tmp := c.db.Model(&TaskExecutionEntry{}).Where("id = ?", entry.ID).Updates(theUpdate)
 	if tmp.Error != nil {
 		return models.NewSQLError(
 			fmt.Sprintf("failed to update task exec instance %s state", instanceID), tmp.Error, true,

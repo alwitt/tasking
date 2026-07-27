@@ -1,0 +1,18 @@
+# -------------------------------------------------
+# Base image – choose one that matches your tool chain
+# -------------------------------------------------
+FROM arigaio/atlas AS builder
+
+# -------------------------------------------------
+# Labels – they become image metadata
+# -------------------------------------------------
+LABEL \
+    org.opencontainers.image.title="Tasking database migration image" \
+    org.opencontainers.image.description="Contains migration SQLs, and the Atlas tool chain"
+
+# -------------------------------------------------
+# Copy migration SQL files into the image
+# -------------------------------------------------
+WORKDIR /app
+COPY migrations/ ./migrations/
+COPY atlas.hcl ./atlas.hcl

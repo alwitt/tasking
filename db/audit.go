@@ -25,7 +25,7 @@ func (c *databaseImpl) defineNewSystemEvent(
 
 	metadataStr, _ := json.Marshal(&metadata)
 
-	newEntry := systemEventAuditEntry{
+	newEntry := SystemEventAuditEntry{
 		SystemEventAudit: models.SystemEventAudit{
 			ID:        ulid.Make().String(),
 			EventType: eventType,
@@ -114,7 +114,7 @@ func (c *databaseImpl) MarkSystemEventsBroadcast(
 	}
 
 	tmp := c.db.
-		Model(&systemEventAuditEntry{}).
+		Model(&SystemEventAuditEntry{}).
 		Where("id IN ? AND broadcast_at IS NULL", eventIDs).
 		UpdateColumn("broadcast_at", broadcastAt)
 	if tmp.Error != nil {
@@ -138,7 +138,7 @@ func (c *databaseImpl) ListSystemEvents(
 		return nil, goutils.NewValidationError("system event query filter is not valid", err, true)
 	}
 
-	query := c.db.Model(&systemEventAuditEntry{})
+	query := c.db.Model(&SystemEventAuditEntry{})
 
 	if len(filters.EventTypes) > 0 {
 		query = query.Where("type in ?", filters.EventTypes)
@@ -163,7 +163,7 @@ func (c *databaseImpl) ListSystemEvents(
 
 	query = query.Order("id")
 
-	var entries []systemEventAuditEntry
+	var entries []SystemEventAuditEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, models.NewSQLError("failed to list captured system events", tmp.Error, true)
 	}

@@ -1,0 +1,17 @@
+services:
+  tasking-dev-db:
+    container_name: tasking-dev-db
+    restart: unless-stopped
+    hostname: "postgres"
+    image: "postgres:18"
+    ports:
+      - 127.0.0.1:9432:5432
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - tasking-dev
+
+networks:
+  tasking-dev:

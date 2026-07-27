@@ -10,75 +10,75 @@ import (
 // --------------------------------------------------------------------------------------
 // Audit
 
-// systemEventAuditEntry system event audit entry
-type systemEventAuditEntry struct {
+// SystemEventAuditEntry system event audit entry
+type SystemEventAuditEntry struct {
 	models.SystemEventAudit
 }
 
 // TableName hard code table name
-func (systemEventAuditEntry) TableName() string {
+func (SystemEventAuditEntry) TableName() string {
 	return "audit_system_events"
 }
 
 // --------------------------------------------------------------------------------------
 // Tasks
 
-// taskEntry task DB entry
-type taskEntry struct {
+// TaskEntry task DB entry
+type TaskEntry struct {
 	models.Task
 }
 
 // TableName hard code table name
-func (taskEntry) TableName() string {
+func (TaskEntry) TableName() string {
 	return "tasks"
 }
 
-// taskExecutionEntry task execution DB entry
-type taskExecutionEntry struct {
+// TaskExecutionEntry task execution DB entry
+type TaskExecutionEntry struct {
 	models.TaskExecution
-	Task   taskEntry           `gorm:"constraint:OnDelete:CASCADE;foreignKey:TaskID" validate:"-"`
-	Parent *taskExecutionEntry `gorm:"constraint:OnDelete:SET NULL;foreignKey:RetryParentExecutionID" validate:"-"`
+	Task   TaskEntry           `gorm:"constraint:OnDelete:CASCADE;foreignKey:TaskID" validate:"-"`
+	Parent *TaskExecutionEntry `gorm:"constraint:OnDelete:SET NULL;foreignKey:RetryParentExecutionID" validate:"-"`
 }
 
 // TableName hard code table name
-func (taskExecutionEntry) TableName() string {
+func (TaskExecutionEntry) TableName() string {
 	return "task_executions"
 }
 
 // --------------------------------------------------------------------------------------
 // Workflow
 
-// workflowEntry workflow DB entry
-type workflowEntry struct {
+// WorkflowEntry workflow DB entry
+type WorkflowEntry struct {
 	models.Workflow
 }
 
 // TableName hard code table name
-func (workflowEntry) TableName() string {
+func (WorkflowEntry) TableName() string {
 	return "workflows"
 }
 
-// workflowStepEntry workflow step DB entry
-type workflowStepEntry struct {
+// WorkflowStepEntry workflow step DB entry
+type WorkflowStepEntry struct {
 	models.WorkflowStep
-	Workflow workflowEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:WorkflowID" validate:"-"`
+	Workflow WorkflowEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:WorkflowID" validate:"-"`
 }
 
 // TableName hard code table name
-func (workflowStepEntry) TableName() string {
+func (WorkflowStepEntry) TableName() string {
 	return "workflow_steps"
 }
 
-// workflowStepDependency records a directed dependency between two workflow steps,
+// WorkflowStepDependency records a directed dependency between two workflow steps,
 // forming an edge of the workflow DAG. Step `StepID` depends on `DependsOnID`, meaning
 // `DependsOnID` must complete before `StepID` becomes eligible to run.
-type workflowStepDependency struct {
+type WorkflowStepDependency struct {
 	// StepID the dependent (downstream) workflow step
 	StepID string            `json:"step_id" gorm:"column:step_id;primaryKey" validate:"required"`
-	Step   workflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:StepID" validate:"-"`
+	Step   WorkflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:StepID" validate:"-"`
 	// DependsOnID the prerequisite (upstream) workflow step which must complete first
 	DependsOnID string            `json:"depends_on_id" gorm:"column:depends_on_id;primaryKey" validate:"required"`
-	DependsOn   workflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:DependsOnID" validate:"-"`
+	DependsOn   WorkflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:DependsOnID" validate:"-"`
 	// CreatedAt entry creation timestamp
 	CreatedAt time.Time `json:"created_at"`
 	// UpdatedAt entry update timestamp
@@ -86,23 +86,23 @@ type workflowStepDependency struct {
 }
 
 // TableName hard code table name
-func (workflowStepDependency) TableName() string {
+func (WorkflowStepDependency) TableName() string {
 	return "workflow_step_dependencies"
 }
 
 // =======================================
 // Linking workflow step with the tasks executing it
 
-// workflowStepRunnerTask links a workflow step to the set of tasks which worked on it.
+// WorkflowStepRunnerTask links a workflow step to the set of tasks which worked on it.
 // A step may be associated with multiple tasks across its lifetime (e.g. the original
 // attempt and subsequent manual retries).
-type workflowStepRunnerTask struct {
+type WorkflowStepRunnerTask struct {
 	// StepID the workflow step
 	StepID string            `json:"step_id" gorm:"column:step_id;primaryKey" validate:"required"`
-	Step   workflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:StepID" validate:"-"`
+	Step   WorkflowStepEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:StepID" validate:"-"`
 	// TaskID the task which worked on the step
 	TaskID string    `json:"task_id" gorm:"column:task_id;primaryKey" validate:"required"`
-	Task   taskEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:TaskID" validate:"-"`
+	Task   TaskEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:TaskID" validate:"-"`
 	// CreatedAt entry creation timestamp
 	CreatedAt time.Time `json:"created_at"`
 	// UpdatedAt entry update timestamp
@@ -110,6 +110,6 @@ type workflowStepRunnerTask struct {
 }
 
 // TableName hard code table name
-func (workflowStepRunnerTask) TableName() string {
+func (WorkflowStepRunnerTask) TableName() string {
 	return "workflow_step_runner_tasks"
 }
