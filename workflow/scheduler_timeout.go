@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/tasking/db"
 	"github.com/alwitt/tasking/models"
 )
@@ -39,7 +40,7 @@ func (s *schedulerImpl) timeOutWorkflowSteps(
 ) ([]string, error) {
 	steps, err := dbClient.ListWorkflowSteps(dbCtx, workflowEntry.ID)
 	if err != nil {
-		return nil, models.NewPersistenceError(
+		return nil, goutils.NewPersistenceError(
 			fmt.Sprintf("failed to list steps of workflow %s to time out", workflowEntry.ID), err, true,
 		)
 	}
@@ -67,7 +68,7 @@ func (s *schedulerImpl) timeOutWorkflowSteps(
 		// A RUNNING step has a live (non-terminal) task; collect it for cancellation.
 		_, liveTasks, err := dbClient.GetWorkflowStepAndExecutorTask(dbCtx, step.ID, true)
 		if err != nil {
-			return nil, models.NewPersistenceError(
+			return nil, goutils.NewPersistenceError(
 				fmt.Sprintf("failed to fetch live task of running step %s to cancel", step.ID),
 				err, true,
 			)
@@ -81,7 +82,7 @@ func (s *schedulerImpl) timeOutWorkflowSteps(
 		if err := dbClient.MarkWorkflowStepTimedOut(
 			dbCtx, workflowEntry.ID, timeOutStepIDs, now,
 		); err != nil {
-			return nil, models.NewPersistenceError(
+			return nil, goutils.NewPersistenceError(
 				fmt.Sprintf("failed to time out steps of workflow %s", workflowEntry.ID), err, true,
 			)
 		}
@@ -91,7 +92,7 @@ func (s *schedulerImpl) timeOutWorkflowSteps(
 	// transition). RUNNING / FAILED -> TIMED_OUT are the legal entries.
 	if workflowEntry.State != models.WorkflowStateTimedOut {
 		if err := dbClient.MarkWorkflowTimedOut(dbCtx, workflowEntry.ID, now); err != nil {
-			return nil, models.NewPersistenceError(
+			return nil, goutils.NewPersistenceError(
 				fmt.Sprintf("failed to mark workflow %s timed out", workflowEntry.ID), err, true,
 			)
 		}

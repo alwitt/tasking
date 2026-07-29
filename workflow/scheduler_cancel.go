@@ -47,7 +47,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s to cancel", workflowID), err, true,
 				)
 			}
@@ -70,7 +70,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 
 			// Mark the workflow CANCELLING (any non-terminal state -> CANCELLING is legal).
 			if err := dbClient.MarkWorkflowCancelling(dbCtx, workflowID, now); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark workflow %s cancelling", workflowID), err, true,
 				)
 			}
@@ -80,7 +80,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 			// intent and the guard; COMPLETE / CANCELLED / CANCELLING steps are left untouched.
 			steps, err := dbClient.ListWorkflowSteps(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to list steps of workflow %s to cancel", workflowID), err, true,
 				)
 			}
@@ -94,7 +94,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 					// failed task is not retried.
 					_, liveTasks, err := dbClient.GetWorkflowStepAndExecutorTask(dbCtx, step.ID, true)
 					if err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to fetch live task of running step %s to cancel", step.ID),
 							err, true,
 						)
@@ -117,7 +117,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 				if err := dbClient.MarkWorkflowStepCancelling(
 					dbCtx, workflowID, cancellingStepIDs, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark cancelling steps of workflow %s", workflowID), err, true,
 					)
 				}
@@ -126,7 +126,7 @@ func (s *schedulerImpl) cancelWorkflow(ctx context.Context, workflowID string) e
 				if err := dbClient.MarkWorkflowStepCancelled(
 					dbCtx, workflowID, cancelledStepIDs, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark cancelled steps of workflow %s", workflowID), err, true,
 					)
 				}

@@ -61,14 +61,14 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 			// guard - in one query.
 			step, liveTasks, err := dbClient.GetWorkflowStepAndExecutorTask(dbCtx, stepID, true)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow step %s", stepID), err, true,
 				)
 			}
 
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, step.WorkflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s of step %s", step.WorkflowID, stepID),
 					err, true,
 				)
@@ -153,7 +153,7 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 				dbClient,
 			)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to define execution task for step %s", stepID), err, true,
 				)
 			}
@@ -161,7 +161,7 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 			// Persist the step<->task linkage (load-bearing for feedback resolution and both
 			// recovery layers).
 			if err := dbClient.LinkWorkflowStepWithExecutorTask(dbCtx, stepID, stepTask.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to link step %s with execution task %s", stepID, stepTask.ID,
 					), err, true,
@@ -172,7 +172,7 @@ func (s *schedulerImpl) scheduleWorkflowStep(ctx context.Context, stepID string)
 			if err := dbClient.MarkWorkflowStepRunning(
 				dbCtx, step.WorkflowID, []string{stepID}, now,
 			); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark step %s running", stepID), err, true,
 				)
 			}

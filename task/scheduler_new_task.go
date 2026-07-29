@@ -22,7 +22,7 @@ func (s *schedulerImpl) processNewPendingTask(ctx context.Context, taskID string
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			taskEntry, err := dbClient.GetTask(dbCtx, taskID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch task %s", taskID), err, true,
 				)
 			}
@@ -43,14 +43,14 @@ func (s *schedulerImpl) processNewPendingTask(ctx context.Context, taskID string
 			}
 
 			if err := dbClient.MarkTaskActive(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to activate task %s", taskEntry.ID), err, true,
 				)
 			}
 
 			execInstanceEntry, err := dbClient.DefineNewTaskExecInstance(dbCtx, taskEntry)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to define execution instance for task %s", taskEntry.ID), err, true,
 				)
 			}
@@ -58,7 +58,7 @@ func (s *schedulerImpl) processNewPendingTask(ctx context.Context, taskID string
 			// Enqueue execution instance for processing
 			if execInstanceEntry.ExecutionClass == models.TaskExecutionClassImmediate {
 				if err = dbClient.MarkTaskExecQueued(dbCtx, execInstanceEntry.ID); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf(
 							"failed to mark execution instance %s task %s queued",
 							execInstanceEntry.ID,

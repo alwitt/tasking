@@ -40,7 +40,7 @@ func (c *databaseImpl) defineNewSystemEvent(
 	}
 
 	if tmp := c.db.Create(&newEntry); tmp.Error != nil {
-		return models.SystemEventAudit{}, models.NewSQLError(
+		return models.SystemEventAudit{}, goutils.NewSQLError(
 			fmt.Sprintf("new system event '%s' insert failed", eventType), tmp.Error, true,
 		)
 	}
@@ -118,7 +118,7 @@ func (c *databaseImpl) MarkSystemEventsBroadcast(
 		Where("id IN ? AND broadcast_at IS NULL", eventIDs).
 		UpdateColumn("broadcast_at", broadcastAt)
 	if tmp.Error != nil {
-		return models.NewSQLError("failed to mark system events broadcast", tmp.Error, true)
+		return goutils.NewSQLError("failed to mark system events broadcast", tmp.Error, true)
 	}
 
 	return nil
@@ -165,7 +165,7 @@ func (c *databaseImpl) ListSystemEvents(
 
 	var entries []SystemEventAuditEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list captured system events", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list captured system events", tmp.Error, true)
 	}
 
 	result := []models.SystemEventAudit{}

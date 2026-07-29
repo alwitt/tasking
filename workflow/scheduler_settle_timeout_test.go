@@ -170,7 +170,7 @@ func TestSettleWorkflowIfDone(t *testing.T) {
 		settled, err := s.settleWorkflowIfDone(utCtx, mockDatabase, workflow, now)
 		assert.NotNil(err)
 		assert.False(settled)
-		var perr models.PersistenceError
+		var perr goutils.PersistenceError
 		assert.ErrorAs(err, &perr)
 	})
 
@@ -193,7 +193,7 @@ func TestSettleWorkflowIfDone(t *testing.T) {
 		settled, err := s.settleWorkflowIfDone(utCtx, mockDatabase, workflow, now)
 		assert.NotNil(err)
 		assert.False(settled)
-		var perr models.PersistenceError
+		var perr goutils.PersistenceError
 		assert.ErrorAs(err, &perr)
 	})
 }
@@ -294,7 +294,7 @@ func TestTimeOutWorkflowSteps(t *testing.T) {
 
 		_, err := s.timeOutWorkflowSteps(utCtx, mockDatabase, workflow, now)
 		assert.NotNil(err)
-		var perr models.PersistenceError
+		var perr goutils.PersistenceError
 		assert.ErrorAs(err, &perr)
 	})
 }

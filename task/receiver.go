@@ -314,7 +314,7 @@ func (r *receiverImpl) recordInvalidMessage(
 // indicates the database or the connection to it has failed. Such errors are fatal
 // for the receiver and must stop the worker rather than be recovered per-request.
 func isFatalDBError(err error) bool {
-	var sqlErr models.SQLError
+	var sqlErr goutils.SQLError
 	return errors.As(err, &sqlErr)
 }
 
@@ -506,7 +506,7 @@ func (r *receiverImpl) Initialize(
 				for instanceID, origMsg := range bufferedExecReq {
 					execInstance, err := dbClient.GetTaskExecution(dbCtx, instanceID)
 					if err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to fetch task execution instance '%s'", instanceID), err, true,
 						)
 					}
@@ -585,7 +585,7 @@ func (r *receiverImpl) Initialize(
 					},
 				)
 				if err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf(
 							"failed to list task execution instance owned by '%s'", r.config.Name,
 						), err, true,
@@ -599,7 +599,7 @@ func (r *receiverImpl) Initialize(
 						nil, // crash mid-run is retryable per the task's policy
 						time.Now().UTC(),
 					); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf(
 								"failed to mark task execution instance '%s' failed", instance.ID,
 							), err, true,
@@ -776,7 +776,7 @@ func (r *receiverImpl) processOneIPCRequest(
 			if err := dbClient.MarkTaskExecAcquired(
 				dbCtx, execRequest.InstanceID, r.config.Name,
 			); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark execution instance %s acquired", execRequest.InstanceID,
 					), err, true,
@@ -875,7 +875,7 @@ func (r *receiverImpl) processOneIPCRequest(
 				if err := dbClient.MarkTaskExecFailed(
 					dbCtx, execRequest.InstanceID, submitErr.Error(), nil, time.Now().UTC(),
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf(
 							"failed to mark execution instance %s failed", execRequest.InstanceID,
 						), err, true,

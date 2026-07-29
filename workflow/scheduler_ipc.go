@@ -19,7 +19,7 @@ import (
 // stop the consumer rather than be recovered per-request. Mirrors the task package's helper of the
 // same name (errors.As sees the SQLError through the wrapped scheduler/persistence error chain).
 func isFatalDBError(err error) bool {
-	var sqlErr models.SQLError
+	var sqlErr goutils.SQLError
 	return errors.As(err, &sqlErr)
 }
 

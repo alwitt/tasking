@@ -93,7 +93,7 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 					Return(models.TaskExecution{}, dbFailure)
 			},
 			checkErr: func(assert *assert.Assertions, err error) {
-				var core models.PersistenceError
+				var core goutils.PersistenceError
 				assertPreprocessCore(assert, err, &core)
 			},
 		},
@@ -136,7 +136,7 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 					Return(models.Task{}, dbFailure)
 			},
 			checkErr: func(assert *assert.Assertions, err error) {
-				var core models.PersistenceError
+				var core goutils.PersistenceError
 				assertPreprocessCore(assert, err, &core)
 			},
 		},
@@ -170,7 +170,7 @@ func TestExecutorPreprocessingFailures(t *testing.T) {
 					Return(dbFailure)
 			},
 			checkErr: func(assert *assert.Assertions, err error) {
-				var core models.PersistenceError
+				var core goutils.PersistenceError
 				assertPreprocessCore(assert, err, &core)
 			},
 		},
@@ -574,7 +574,7 @@ func TestExecutorPostprocessingFailures(t *testing.T) {
 				"expected TaskPostprocessError, got %T: %v", gotErr, gotErr,
 			)
 			assert.NotNil(postErr.Core)
-			var core models.PersistenceError
+			var core goutils.PersistenceError
 			assert.ErrorAs(postErr.Core, &core)
 		})
 	}

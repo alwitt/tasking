@@ -31,7 +31,7 @@ func (s *schedulerImpl) performMaintenance(ctx context.Context) error {
 				},
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list pending and cancelling tasks", err, true,
 				)
 			}
@@ -74,7 +74,7 @@ func (s *schedulerImpl) performMaintenance(ctx context.Context) error {
 				TargetDeadline: goutils.GetTypedPtr(time.Now().UTC()),
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list timed out tasks", err, true,
 				)
 			}
@@ -106,7 +106,7 @@ func (s *schedulerImpl) performMaintenance(ctx context.Context) error {
 				},
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list failed and completed task execution instances", err, true,
 				)
 			}
@@ -159,7 +159,7 @@ func (s *schedulerImpl) performMaintenance(ctx context.Context) error {
 				TargetStart: goutils.GetTypedPtr(time.Now().UTC()),
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list scheduled task execution instances", err, true,
 				)
 			}
@@ -199,7 +199,7 @@ func (s *schedulerImpl) performMaintenance(ctx context.Context) error {
 				TargetDeadline: goutils.GetTypedPtr(time.Now().UTC()),
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list timed out task execution instances", err, true,
 				)
 			}

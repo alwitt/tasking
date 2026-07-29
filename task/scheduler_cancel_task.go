@@ -28,14 +28,14 @@ func (s *schedulerImpl) cancelOngoingExecInstancesOfTask(
 		},
 	)
 	if err != nil {
-		return models.NewPersistenceError(
+		return goutils.NewPersistenceError(
 			fmt.Sprintf("failed to fetch task %s execution instances", taskEntry.ID), err, true,
 		)
 	}
 	for _, oneInstance := range execInstances {
 		err = dbClient.MarkTaskExecCancelled(ctx, oneInstance.ID, "parent task cancelled", timestamp)
 		if err != nil {
-			return models.NewPersistenceError(
+			return goutils.NewPersistenceError(
 				fmt.Sprintf(
 					"failed to cancel execution instance %s task %s", oneInstance.ID, taskEntry.ID,
 				), err, true,
@@ -59,7 +59,7 @@ func (s *schedulerImpl) processCancelTask(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			taskEntry, err := dbClient.GetTask(dbCtx, taskID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch task %s", taskID), err, true,
 				)
 			}
@@ -88,14 +88,14 @@ func (s *schedulerImpl) processCancelTask(
 			// CANCELLING here before finalizing the cancellation.
 			if taskEntry.TaskState != models.TaskStateCancelling {
 				if err := dbClient.MarkTaskCancelling(dbCtx, taskEntry.ID); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark task %s cancelling", taskEntry.ID), err, true,
 					)
 				}
 			}
 
 			if err := dbClient.MarkTaskCancelled(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to cancel task %s", taskEntry.ID), err, true,
 				)
 			}
@@ -128,7 +128,7 @@ func (s *schedulerImpl) processTaskTimeout(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			taskEntry, err := dbClient.GetTask(dbCtx, taskID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch task %s", taskID), err, true,
 				)
 			}
@@ -148,7 +148,7 @@ func (s *schedulerImpl) processTaskTimeout(
 			}
 
 			if err := dbClient.MarkTaskTimedOut(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark task %s timed out", taskEntry.ID), err, true,
 				)
 			}

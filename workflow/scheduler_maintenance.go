@@ -78,7 +78,7 @@ func (s *schedulerImpl) runMaintenanceSweep(ctx context.Context) error {
 				TargetStates: nonTerminalWorkflowStates,
 			})
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					"failed to list non-terminal workflows for maintenance sweep", err, true,
 				)
 			}
@@ -154,7 +154,7 @@ func (s *schedulerImpl) reconcileWorkflow(ctx context.Context, workflowID string
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s to reconcile", workflowID), err, true,
 				)
 			}
@@ -179,7 +179,7 @@ func (s *schedulerImpl) reconcileWorkflow(ctx context.Context, workflowID string
 
 			steps, err := dbClient.ListWorkflowSteps(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to list steps of workflow %s to reconcile", workflowID), err, true,
 				)
 			}
@@ -321,7 +321,7 @@ func (s *schedulerImpl) classifyRunningStep(
 ) (*execUpdatePoke, error) {
 	_, tasks, err := dbClient.GetWorkflowStepAndExecutorTask(dbCtx, step.ID, false)
 	if err != nil {
-		return nil, models.NewPersistenceError(
+		return nil, goutils.NewPersistenceError(
 			fmt.Sprintf("failed to fetch tasks of running step %s to reconcile", step.ID), err, true,
 		)
 	}
@@ -365,7 +365,7 @@ func (s *schedulerImpl) classifyCancellingStep(
 ) (*execUpdatePoke, []string, error) {
 	_, tasks, err := dbClient.GetWorkflowStepAndExecutorTask(dbCtx, step.ID, false)
 	if err != nil {
-		return nil, nil, models.NewPersistenceError(
+		return nil, nil, goutils.NewPersistenceError(
 			fmt.Sprintf("failed to fetch tasks of cancelling step %s to reconcile", step.ID), err, true,
 		)
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alwitt/goutils"
 	mockcommon "github.com/alwitt/tasking/mocks/common"
 	mockdb "github.com/alwitt/tasking/mocks/db"
 	"github.com/alwitt/tasking/models"
@@ -789,7 +790,7 @@ func TestProcessOneIPCRequest(t *testing.T) {
 		h.expectTx()
 		h.mockDatabase.EXPECT().
 			GetTask(mock.Anything, taskID).
-			Return(models.Task{}, models.NewSQLError("database is down", simErr, true))
+			Return(models.Task{}, goutils.NewSQLError("database is down", simErr, true))
 		h.ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		err := h.scheduler.processOneIPCRequest(utCtx)

@@ -42,7 +42,7 @@ func (s *schedulerImpl) applyStepTaskUpdate(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			resolved, err := dbClient.GetWorkflowStepProcessedByTask(dbCtx, taskID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to resolve step for task %s", taskID), err, true,
 				)
 			}

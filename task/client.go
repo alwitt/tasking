@@ -451,7 +451,7 @@ func (c *clientImpl) defineOneShotTask(
 			var err error
 			taskEntry, err = define(dbCtx, dbClient, c.resolveRetry(name, overrideRetry))
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to define new one-shot task entry for '%s'", name), err, true,
 				)
 			}
@@ -526,7 +526,7 @@ func (c *clientImpl) CancelTask(
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, c.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			if _, err := dbClient.GetTask(dbCtx, taskID); err != nil {
-				return models.NewPersistenceError("failed to read task "+taskID, err, true)
+				return goutils.NewPersistenceError("failed to read task "+taskID, err, true)
 			}
 			return nil
 		},

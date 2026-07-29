@@ -740,5 +740,5 @@ func notFoundOrError(err error, entity, id string) error {
 			fmt.Sprintf("%s '%s' does not exist", entity, id), err, true,
 		)
 	}
-	return models.NewSQLError(fmt.Sprintf("failed to fetch %s '%s'", entity, id), err, true)
+	return goutils.NewSQLError(fmt.Sprintf("failed to fetch %s '%s'", entity, id), err, true)
 }

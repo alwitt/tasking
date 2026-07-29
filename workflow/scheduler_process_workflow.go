@@ -46,7 +46,7 @@ func (s *schedulerImpl) processWorkflow(ctx context.Context, workflowID string) 
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s", workflowID), err, true,
 				)
 			}
@@ -71,7 +71,7 @@ func (s *schedulerImpl) processWorkflow(ctx context.Context, workflowID string) 
 			// a RUNNING or FAILED workflow is re-processed without it.
 			if workflowEntry.State == models.WorkflowStatePending {
 				if err := dbClient.MarkWorkflowRunning(dbCtx, workflowEntry.ID, now); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark workflow %s running", workflowEntry.ID), err, true,
 					)
 				}
@@ -82,7 +82,7 @@ func (s *schedulerImpl) processWorkflow(ctx context.Context, workflowID string) 
 			// above is what governs whether we reach here.
 			startableSteps, err := dbClient.ListWorkflowStepsReadyToRun(dbCtx, workflowEntry.ID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to list startable steps of workflow %s", workflowEntry.ID),
 					err, true,
 				)
@@ -99,7 +99,7 @@ func (s *schedulerImpl) processWorkflow(ctx context.Context, workflowID string) 
 			// DEFINED -> PENDING for the startable steps. This is the only site of that transition.
 			err = dbClient.MarkWorkflowStepPending(dbCtx, workflowEntry.ID, stepIDs, now)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark workflow %s steps pending", workflowEntry.ID), err, true,
 				)
 			}

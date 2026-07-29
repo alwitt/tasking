@@ -129,12 +129,12 @@ func (r *RunWorkflowStepTaskProcessor) ProcessTaskExecution(
 		func(dbCtx context.Context, dbClient db.Database) error {
 			var err error
 			if step, err = dbClient.GetWorkflowStep(dbCtx, stepParam.StepID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow step %s", stepParam.StepID), err, true,
 				)
 			}
 			if workflow, err = dbClient.GetWorkflow(dbCtx, step.WorkflowID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to fetch workflow %s for step %s", step.WorkflowID, stepParam.StepID,
 					), err, true,

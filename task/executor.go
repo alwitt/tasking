@@ -253,7 +253,7 @@ func (e *executorImpl) processExecutionInstance(
 			// Fetch the execution instance
 			taskExecutionEntry, err = dbClient.GetTaskExecution(dbCtx, instanceID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch execution instance %s", instanceID), err, true,
 				)
 			}
@@ -279,7 +279,7 @@ func (e *executorImpl) processExecutionInstance(
 			// Fetch the parent task
 			taskEntry, err = dbClient.GetTask(dbCtx, taskExecutionEntry.TaskID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to fetch parent task %s of execution instance %s",
 						taskExecutionEntry.TaskID,
@@ -301,7 +301,7 @@ func (e *executorImpl) processExecutionInstance(
 
 			// Mark that task is being worked on
 			if err := dbClient.MarkTaskExecProcessing(dbCtx, instanceID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark execution instance %s in progress", instanceID,
 					), err, true,
@@ -342,13 +342,13 @@ func (e *executorImpl) processExecutionInstance(
 					if err := dbClient.MarkTaskExecFailed(
 						dbCtx, instanceID, taskErr.Error(), failureDisposition(taskErr), completedAt,
 					); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to mark execution instance %s failed", instanceID), err, true,
 						)
 					}
 				} else {
 					if err := dbClient.MarkTaskExecProcessed(dbCtx, instanceID, completedAt); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to mark execution instance %s complete", instanceID), err, true,
 						)
 					}

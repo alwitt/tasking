@@ -288,7 +288,7 @@ func TestClientDefineAndRunImmediateOneShotTask(t *testing.T) {
 		)
 		assert.NotNil(err)
 		assert.Empty(task.ID)
-		var persistErr models.PersistenceError
+		var persistErr goutils.PersistenceError
 		assert.True(
 			errors.As(err, &persistErr), "expected PersistenceError, got %T: %v", err, err,
 		)
@@ -564,7 +564,7 @@ func TestClientCancelTask(t *testing.T) {
 
 		err := client.CancelTask(utCtx, taskID, nil)
 		assert.NotNil(err)
-		var persistErr models.PersistenceError
+		var persistErr goutils.PersistenceError
 		assert.True(
 			errors.As(err, &persistErr), "expected PersistenceError, got %T: %v", err, err,
 		)

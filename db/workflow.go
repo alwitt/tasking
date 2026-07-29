@@ -118,20 +118,20 @@ func (c *databaseImpl) DefineNewWorkflow(
 
 	// Record the workflow
 	if tmp := c.db.Create(&newWorkflow); tmp.Error != nil {
-		return models.Workflow{}, models.NewSQLError(
+		return models.Workflow{}, goutils.NewSQLError(
 			fmt.Sprintf("failed to define new workflow '%s'", newWorkflow.Name), tmp.Error, true,
 		)
 	}
 	// Record the workflow steps
 	if tmp := c.db.Create(&steps); tmp.Error != nil {
-		return models.Workflow{}, models.NewSQLError(
+		return models.Workflow{}, goutils.NewSQLError(
 			fmt.Sprintf("failed to define new workflow '%s' steps", newWorkflow.Name), tmp.Error, true,
 		)
 	}
 	// Record the links between workflow steps
 	if len(childToParentStepLinks) > 0 {
 		if tmp := c.db.Create(&childToParentStepLinks); tmp.Error != nil {
-			return models.Workflow{}, models.NewSQLError(
+			return models.Workflow{}, goutils.NewSQLError(
 				fmt.Sprintf("failed to define new workflow '%s' step dependencies", newWorkflow.Name),
 				tmp.Error, true,
 			)
@@ -143,7 +143,7 @@ func (c *databaseImpl) DefineNewWorkflow(
 		ctx, models.SystemEventTypeDefineWorkflow,
 		&models.SystemEventWorkflowEvents{WorkflowID: newWorkflow.ID, Creator: creator},
 	); err != nil {
-		return models.Workflow{}, models.NewSQLError(
+		return models.Workflow{}, goutils.NewSQLError(
 			fmt.Sprintf("failed to record define workflow '%s' system event", newWorkflow.Name),
 			err, true,
 		)
@@ -225,7 +225,7 @@ func (c *databaseImpl) updateWorkflowState(
 	}
 
 	if tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("workflow %s state update failed", workflowID), tmp.Error, true,
 		)
 	}
@@ -245,7 +245,7 @@ func (c *databaseImpl) updateWorkflowState(
 			ctx, eventType,
 			&models.SystemEventWorkflowEvents{WorkflowID: workflowID, Creator: entry.Creator},
 		); err != nil {
-			return models.NewSQLError(
+			return goutils.NewSQLError(
 				fmt.Sprintf(
 					"failed to record workflow %s change state to '%s' system event",
 					workflowID, newState,
@@ -391,7 +391,7 @@ func (c *databaseImpl) ListWorkflows(
 
 	var entries []WorkflowEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list workflows", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list workflows", tmp.Error, true)
 	}
 
 	result := []models.Workflow{}
@@ -464,7 +464,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 			Model(&WorkflowStepRunnerTask{}).
 			Where("step_id in ?", stepIDs).
 			Find(&linkEntries); tmp.Error != nil {
-			return models.NewSQLError(
+			return goutils.NewSQLError(
 				fmt.Sprintf("failed to list task links of workflow %s steps", workflowID),
 				tmp.Error, true,
 			)
@@ -482,7 +482,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 			// Reap the step tasks. This cascades their task_executions (history) and the
 			// workflow_step_runner_tasks link rows via the task-side FK cascade.
 			if tmp := c.db.Where("id in ?", taskIDs).Delete(&TaskEntry{}); tmp.Error != nil {
-				return models.NewSQLError(
+				return goutils.NewSQLError(
 					fmt.Sprintf("failed to reap tasks of workflow %s", workflowID), tmp.Error, true,
 				)
 			}
@@ -493,7 +493,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 	// link rows via the step-side FK cascade.
 	tmp := c.db.Where("id = ?", workflowID).Delete(&WorkflowEntry{})
 	if tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to delete workflow %s", workflowID), tmp.Error, true,
 		)
 	}
@@ -503,7 +503,7 @@ func (c *databaseImpl) DeleteWorkflow(ctx context.Context, workflowID string) er
 		ctx, models.SystemEventTypeDeleteWorkflow,
 		&models.SystemEventWorkflowEvents{WorkflowID: workflowID, Creator: entry.Creator},
 	); err != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to record delete workflow %s system event", workflowID), err, true,
 		)
 	}
@@ -537,7 +537,7 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 		Model(&WorkflowEntry{}).
 		Where("id = ?", workflowID).
 		UpdateColumn("deadline", &deadline); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to update workflow %s deadline", workflowID), tmp.Error, true,
 		)
 	}
@@ -550,7 +550,7 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 			models.WorkflowStepStateCancelled,
 		}).
 		UpdateColumn("deadline", &deadline); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to update workflow %s step deadlines", workflowID), tmp.Error, true,
 		)
 	}
@@ -560,7 +560,7 @@ func (c *databaseImpl) UpdateWorkflowDeadline(
 		ctx, models.SystemEventTypeWorkflowDeadlineUpdate,
 		&models.SystemEventWorkflowEvents{WorkflowID: workflowID, Creator: entry.Creator},
 	); err != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to record workflow %s deadline update system event", workflowID),
 			err, true,
 		)
@@ -614,7 +614,7 @@ func (c *databaseImpl) ListWorkflowSteps(
 		Model(&WorkflowStepEntry{}).
 		Where("workflow_id = ?", workflowID).
 		Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError(
+		return nil, goutils.NewSQLError(
 			fmt.Sprintf("failed to list workflow %s steps", workflowID), tmp.Error, true,
 		)
 	}
@@ -701,7 +701,7 @@ func (c *databaseImpl) ListWorkflowStepsReadyToRun(
 		Having("COUNT(CASE WHEN parent.state <> ? THEN 1 END) = 0", models.WorkflowStepStateComplete).
 		Find(&entries)
 	if tmp.Error != nil {
-		return nil, models.NewSQLError(
+		return nil, goutils.NewSQLError(
 			fmt.Sprintf("failed to list ready-to-run steps of workflow %s", workflowID), tmp.Error, true,
 		)
 	}
@@ -741,7 +741,7 @@ func (c *databaseImpl) updateWorkflowStepState(
 		Model(&WorkflowStepEntry{}).
 		Where("id in ? and workflow_id = ?", deDuppedStepIDs, workflowID).
 		Find(&entries); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to fetch workflow %s steps", workflowID), tmp.Error, true,
 		)
 	}
@@ -777,7 +777,7 @@ func (c *databaseImpl) updateWorkflowStepState(
 			Where("id in ? and workflow_id = ?", ids, workflowID).
 			Updates(values)
 		if tmp.Error != nil {
-			return models.NewSQLError(
+			return goutils.NewSQLError(
 				fmt.Sprintf("workflow %s steps state update failed", workflowID), tmp.Error, true,
 			)
 		}
@@ -854,7 +854,7 @@ func (c *databaseImpl) updateWorkflowStepState(
 				StepID: entry.ID, WorkflowID: entry.WorkflowID, Creator: entry.Creator,
 			},
 		); err != nil {
-			return models.NewSQLError(
+			return goutils.NewSQLError(
 				fmt.Sprintf(
 					"failed to record workflow step %s change state to '%s' system event",
 					entry.ID, newState,
@@ -1015,7 +1015,7 @@ func (c *databaseImpl) LinkWorkflowStepWithExecutorTask(
 ) error {
 	entry := WorkflowStepRunnerTask{StepID: stepID, TaskID: taskID}
 	if tmp := c.db.Create(&entry); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to link workflow step %s with task %s", stepID, taskID),
 			tmp.Error, true,
 		)
@@ -1064,7 +1064,7 @@ func (c *databaseImpl) GetWorkflowStepAndExecutorTask(
 
 	var taskEntries []TaskEntry
 	if tmp := query.Find(&taskEntries); tmp.Error != nil {
-		return models.WorkflowStep{}, nil, models.NewSQLError(
+		return models.WorkflowStep{}, nil, goutils.NewSQLError(
 			fmt.Sprintf("failed to fetch tasks linked to workflow step %s", stepID), tmp.Error, true,
 		)
 	}

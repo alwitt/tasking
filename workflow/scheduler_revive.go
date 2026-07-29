@@ -56,7 +56,7 @@ func (s *schedulerImpl) reviveWorkflow(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s to revive", workflowID), err, true,
 				)
 			}
@@ -89,7 +89,7 @@ func (s *schedulerImpl) reviveWorkflow(
 
 			// Flip the workflow back to RUNNING ({FAILED, TIMED_OUT} -> RUNNING is a legal transition).
 			if err := dbClient.MarkWorkflowRunning(dbCtx, workflowID, now); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark workflow %s running", workflowID), err, true,
 				)
 			}
@@ -99,7 +99,7 @@ func (s *schedulerImpl) reviveWorkflow(
 			// selecting them here is both the intent and the guard.
 			steps, err := dbClient.ListWorkflowSteps(dbCtx, workflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to list steps of workflow %s to revive", workflowID), err, true,
 				)
 			}
@@ -114,7 +114,7 @@ func (s *schedulerImpl) reviveWorkflow(
 				if err := dbClient.MarkWorkflowStepDefined(
 					dbCtx, workflowID, revertStepIDs, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to revert steps of workflow %s to DEFINED", workflowID),
 						err, true,
 					)
@@ -125,7 +125,7 @@ func (s *schedulerImpl) reviveWorkflow(
 			// re-synced to it in the same transaction - no window under a stale deadline.
 			if newDeadline != nil {
 				if err := dbClient.UpdateWorkflowDeadline(dbCtx, workflowID, *newDeadline); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to update deadline of workflow %s on revive", workflowID),
 						err, true,
 					)

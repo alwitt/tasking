@@ -275,7 +275,7 @@ func TestProcessOneIPCRequestClaimOwnership(t *testing.T) {
 			RunAndReturn(runTxAgainst(mockDatabase))
 		mockDatabase.EXPECT().
 			MarkTaskExecAcquired(mock.Anything, instanceID, r.config.Name).
-			Return(models.NewSQLError("boom", simErr, false))
+			Return(goutils.NewSQLError("boom", simErr, false))
 
 		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.NotNil(err)
@@ -283,7 +283,7 @@ func TestProcessOneIPCRequestClaimOwnership(t *testing.T) {
 		assert.True(
 			errors.As(err, &recvErr), "expected TaskReceiverError, got %T: %v", err, err,
 		)
-		var sqlErr models.SQLError
+		var sqlErr goutils.SQLError
 		assert.True(
 			errors.As(err, &sqlErr), "expected SQLError in chain, got %T: %v", err, err,
 		)
@@ -423,11 +423,11 @@ func TestProcessOneIPCRequestSubmit(t *testing.T) {
 			Return(nil)
 		mockDatabase.EXPECT().
 			MarkTaskExecFailed(mock.Anything, instanceID, mock.Anything, mock.Anything, mock.Anything).
-			Return(models.NewSQLError("boom", simErr, false))
+			Return(goutils.NewSQLError("boom", simErr, false))
 
 		err := r.processOneIPCRequest(utCtx, queueName, queueReceiver, executor)
 		assert.NotNil(err)
-		var sqlErr models.SQLError
+		var sqlErr goutils.SQLError
 		assert.True(
 			errors.As(err, &sqlErr), "expected SQLError in chain, got %T: %v", err, err,
 		)

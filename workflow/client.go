@@ -275,7 +275,7 @@ func (c *clientImpl) DefineWorkflow(
 				dbCtx, params.Spec, c.resolveCreator(params.Creator),
 			)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to define new workflow '%s'", params.Spec.Name), err, true,
 				)
 			}
@@ -349,7 +349,7 @@ func (c *clientImpl) ReviveWorkflow(
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, c.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			if _, err := dbClient.GetWorkflow(dbCtx, workflowID); err != nil {
-				return models.NewPersistenceError("failed to read workflow "+workflowID, err, true)
+				return goutils.NewPersistenceError("failed to read workflow "+workflowID, err, true)
 			}
 			return nil
 		},
@@ -385,7 +385,7 @@ func (c *clientImpl) CancelWorkflow(
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, c.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			if _, err := dbClient.GetWorkflow(dbCtx, workflowID); err != nil {
-				return models.NewPersistenceError("failed to read workflow "+workflowID, err, true)
+				return goutils.NewPersistenceError("failed to read workflow "+workflowID, err, true)
 			}
 			return nil
 		},

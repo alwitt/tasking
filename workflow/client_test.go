@@ -266,7 +266,7 @@ func TestClientDefineWorkflow(t *testing.T) {
 		assert.NotNil(err)
 		var clientErr models.WorkflowClientError
 		assert.True(errors.As(err, &clientErr), "expected WorkflowClientError, got %T", err)
-		var persistErr models.PersistenceError
+		var persistErr goutils.PersistenceError
 		assert.True(errors.As(err, &persistErr), "expected PersistenceError in chain, got %v", err)
 	})
 }

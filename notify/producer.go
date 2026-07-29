@@ -184,7 +184,7 @@ func (p *producerImpl) produceNotifications(ctx context.Context) error {
 				OnlyNotBroadcast:           true,
 			})
 			if err != nil {
-				return models.NewPersistenceError("failed to list un-broadcast events", err, true)
+				return goutils.NewPersistenceError("failed to list un-broadcast events", err, true)
 			}
 			return nil
 		},
@@ -242,7 +242,7 @@ func (p *producerImpl) produceNotifications(ctx context.Context) error {
 	if dbErr := p.persistence.UseDatabaseInTransaction(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			if err := dbClient.MarkSystemEventsBroadcast(dbCtx, publishedIDs, broadcastAt); err != nil {
-				return models.NewPersistenceError("failed to mark events broadcast", err, true)
+				return goutils.NewPersistenceError("failed to mark events broadcast", err, true)
 			}
 			return nil
 		},

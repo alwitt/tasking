@@ -85,14 +85,14 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
 			step, err := dbClient.GetWorkflowStep(dbCtx, stepID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow step %s", stepID), err, true,
 				)
 			}
 
 			workflowEntry, err := dbClient.GetWorkflow(dbCtx, step.WorkflowID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch workflow %s of step %s", step.WorkflowID, stepID),
 					err, true,
 				)
@@ -107,7 +107,7 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 					if err := dbClient.MarkWorkflowStepCancelled(
 						dbCtx, workflowEntry.ID, []string{stepID}, now,
 					); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to mark cancelled step %s", stepID), err, true,
 						)
 					}
@@ -136,7 +136,7 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 				if err := dbClient.MarkWorkflowStepComplete(
 					dbCtx, workflowEntry.ID, []string{stepID}, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark step %s complete", stepID), err, true,
 					)
 				}
@@ -154,7 +154,7 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 				if err := dbClient.MarkWorkflowStepFailed(
 					dbCtx, workflowEntry.ID, []string{stepID}, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark step %s failed", stepID), err, true,
 					)
 				}
@@ -163,7 +163,7 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 				// re-flip is an illegal transition).
 				if workflowEntry.State == models.WorkflowStateRunning {
 					if err := dbClient.MarkWorkflowFailed(dbCtx, workflowEntry.ID, now); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to mark workflow %s failed", workflowEntry.ID), err, true,
 						)
 					}
@@ -182,7 +182,7 @@ func (s *schedulerImpl) applyStepExecutionUpdate(
 				if err := dbClient.MarkWorkflowStepCancelled(
 					dbCtx, workflowEntry.ID, []string{stepID}, now,
 				); err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to mark step %s cancelled", stepID), err, true,
 					)
 				}
@@ -272,7 +272,7 @@ func (s *schedulerImpl) settleWorkflowIfDone(
 
 	steps, err := dbClient.ListWorkflowSteps(dbCtx, workflowEntry.ID)
 	if err != nil {
-		return false, models.NewPersistenceError(
+		return false, goutils.NewPersistenceError(
 			fmt.Sprintf("failed to list steps of workflow %s to settle", workflowEntry.ID), err, true,
 		)
 	}
@@ -288,7 +288,7 @@ func (s *schedulerImpl) settleWorkflowIfDone(
 			}
 		}
 		if err := dbClient.MarkWorkflowComplete(dbCtx, workflowEntry.ID, now); err != nil {
-			return false, models.NewPersistenceError(
+			return false, goutils.NewPersistenceError(
 				fmt.Sprintf("failed to mark workflow %s complete", workflowEntry.ID), err, true,
 			)
 		}
@@ -306,7 +306,7 @@ func (s *schedulerImpl) settleWorkflowIfDone(
 			}
 		}
 		if err := dbClient.MarkWorkflowCancelled(dbCtx, workflowEntry.ID, now); err != nil {
-			return false, models.NewPersistenceError(
+			return false, goutils.NewPersistenceError(
 				fmt.Sprintf("failed to mark workflow %s cancelled", workflowEntry.ID), err, true,
 			)
 		}

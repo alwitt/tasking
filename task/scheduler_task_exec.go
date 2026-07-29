@@ -19,7 +19,7 @@ func (s *schedulerImpl) fetchExecInstanceAndParentTask(
 	if err != nil {
 		return models.TaskExecution{},
 			models.Task{},
-			models.NewPersistenceError(
+			goutils.NewPersistenceError(
 				fmt.Sprintf("failed to fetch task execution instance %s", instanceID), err, true,
 			)
 	}
@@ -28,7 +28,7 @@ func (s *schedulerImpl) fetchExecInstanceAndParentTask(
 	if err != nil {
 		return models.TaskExecution{},
 			models.Task{},
-			models.NewPersistenceError(
+			goutils.NewPersistenceError(
 				fmt.Sprintf(
 					"failed to fetch parent task %s of execution instance %s",
 					execInstanceEntry.TaskID,
@@ -75,7 +75,7 @@ func (s *schedulerImpl) processTaskExecutionStarting(
 			}
 
 			if err = dbClient.MarkTaskExecQueued(dbCtx, execInstanceEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s queued", execInstanceEntry.ID,
 					), err, true,
@@ -144,7 +144,7 @@ func (s *schedulerImpl) processTaskExecutionComplete(
 			}
 
 			if err = dbClient.MarkTaskExecFinalized(dbCtx, execInstanceEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s finalized", execInstanceEntry.ID,
 					), err, true,
@@ -152,7 +152,7 @@ func (s *schedulerImpl) processTaskExecutionComplete(
 			}
 
 			if err = dbClient.MarkTaskComplete(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark task %s complete", taskEntry.ID), err, true,
 				)
 			}
@@ -232,7 +232,7 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 			}
 
 			if err = dbClient.MarkTaskExecFinalized(dbCtx, execInstanceEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s finalized", execInstanceEntry.ID,
 					), err, true,
@@ -252,7 +252,7 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 					},
 				)
 				if err != nil {
-					return models.NewPersistenceError(
+					return goutils.NewPersistenceError(
 						fmt.Sprintf("failed to list failed execution instances of task %s", taskEntry.ID),
 						err,
 						true,
@@ -265,7 +265,7 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 				if !shouldRetry {
 					// Non-retryable failure, or retries exhausted
 					if err = dbClient.MarkTaskFailed(dbCtx, taskEntry.ID); err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf("failed to mark task %s failed", taskEntry.ID), err, true,
 						)
 					}
@@ -275,7 +275,7 @@ func (s *schedulerImpl) processTaskExecutionFailed(
 						dbCtx, taskEntry, execInstanceEntry, timestamp.Add(retryDelay),
 					)
 					if err != nil {
-						return models.NewPersistenceError(
+						return goutils.NewPersistenceError(
 							fmt.Sprintf(
 								"failed to define retry execution instance for task %s", taskEntry.ID,
 							), err, true,
@@ -335,7 +335,7 @@ func (s *schedulerImpl) processTaskExecutionEngineFailed(
 			}
 
 			if err = dbClient.MarkTaskExecFinalized(dbCtx, execInstanceEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s finalized", execInstanceEntry.ID,
 					), err, true,
@@ -344,7 +344,7 @@ func (s *schedulerImpl) processTaskExecutionEngineFailed(
 
 			// An engine-level failure is terminal for the task - no retry.
 			if err = dbClient.MarkTaskFailed(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark task %s failed", taskEntry.ID), err, true,
 				)
 			}
@@ -358,7 +358,7 @@ func (s *schedulerImpl) processTaskExecutionEngineFailed(
 					"task engine failed to operate on execution instance %s", execInstanceEntry.ID,
 				),
 			); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to record engine failure audit event for task %s", taskEntry.ID,
 					), err, true,
@@ -415,7 +415,7 @@ func (s *schedulerImpl) processTaskExecutionTimedOut(
 			if err = dbClient.MarkTaskExecFailed(
 				dbCtx, instanceID, fmt.Sprintf("timed out at %s", timestamp.String()), nil, timestamp,
 			); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s failed", execInstanceEntry.ID,
 					), err, true,
@@ -423,7 +423,7 @@ func (s *schedulerImpl) processTaskExecutionTimedOut(
 			}
 
 			if err = dbClient.MarkTaskExecFinalized(dbCtx, execInstanceEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf(
 						"failed to mark task execution instance %s finalized", execInstanceEntry.ID,
 					), err, true,
@@ -432,7 +432,7 @@ func (s *schedulerImpl) processTaskExecutionTimedOut(
 
 			// Since the execution instance has timed out, the task has also timed out
 			if err := dbClient.MarkTaskTimedOut(dbCtx, taskEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to mark task %s timed out", taskEntry.ID), err, true,
 				)
 			}

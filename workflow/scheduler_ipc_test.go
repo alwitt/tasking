@@ -408,7 +408,7 @@ func TestProcessOneIPCRequestDispatch(t *testing.T) {
 			RunAndReturn(runTxAgainst(mockDatabase))
 		mockDatabase.EXPECT().
 			GetWorkflow(mock.Anything, wfID).
-			Return(models.Workflow{}, models.NewSQLError("database is down", simErr, true))
+			Return(models.Workflow{}, goutils.NewSQLError("database is down", simErr, true))
 		ipcReceiver.EXPECT().DeleteBufferedMessage(mock.Anything, msg).Return(nil)
 
 		err = s.processOneIPCRequest(utCtx)
