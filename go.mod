@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	ariga.io/atlas-provider-gorm v0.6.1
-	github.com/alwitt/goutils v0.12.2-rc1
+	github.com/alwitt/goutils v0.12.3-rc4
 	github.com/apex/log v1.9.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
